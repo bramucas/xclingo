@@ -1,20 +1,34 @@
 
+import re
 import sys
 import argparse
 import clingo
 from more_itertools import unique_everseen
-from clingo_utilities import find_by_prefix, body_variables, add_prefix
+from clingo_utilities import find_by_prefix, body_variables, add_prefix, remove_prefix, find_and_remove_by_prefix
 
 rule_counter = 0
 traces = {}
 
 
-def handle_body_labels(body_asts):
+def get_explain_sentences(program):
     '''
+    Returns a list with the explain sentences found in the given program.
+    @param program:
+    @return:
+    '''
+    explain_sentences_string = ""
+    for hit in re.findall("%!explain ([a-z][a-zA-Z]*(\(.*\))?([ ]*:-[ ]*.*)?.)", program):
+        explain_sentences_string += str(hit[0])
+
+    return explain_sentences_string
+
+
+def handle_body_labels(body_asts):
+    """
     @param List[clingo.ast.AST] body_asts:
     @return (label_body, literals, other): tuple containing the list of label theory atoms, the symbolic atoms and
     the rest (respectively).
-    '''
+    """
     label_body = []
     literals = []
     other = []
@@ -30,7 +44,38 @@ def handle_body_labels(body_asts):
     return label_body, literals, other
 
 
-def generate_rules(ast, builder, t_option):
+def add_to_base(generated_rules, builder, t_option):
+    """
+    @param str generated_rules: the rules that will be added to the base program.
+    @param clingo.ProgramBuilder builder: builder of the clingo control object that will receive the generated rules.
+    @param bool t_option: if true, the rules will not be added to the program. They will be printed by stdout instead.
+    @return None:
+    """
+    if t_option:
+        print(generated_rules)
+        return
+
+    # Adds the generated rules to the base program
+    try:
+        clingo.parse_program("#program base." + generated_rules, lambda new_ast: builder.add(new_ast))
+    except RuntimeError as error:
+        if str(error) == "syntax error":
+            print("Error de traducción:\n\n{0}".format(generated_rules))
+            exit(0)
+
+
+def generate_explain_rules(ast, builder, t_option):
+    # Generates the explain rule for the given ast and adds it to the base program.
+    if ast.type == clingo.ast.ASTType.Rule:
+        # starts with explain
+        generated_rules = "explain_{head}:-{body}.".format(
+            head=str(ast['head']),
+            body=",".join([str(add_prefix("holds_", lit)) for lit in [ast['head']] + ast['body']]))
+
+        add_to_base(generated_rules, builder, t_option)
+
+
+def generate_fired_holds_rules(ast, builder, t_option):
     '''
     Generates the label rules (unuseful for now), the fired rules and the holds rules for the given ast rule and adds them
     to the 'base' program via the given builder.
@@ -45,55 +90,49 @@ def generate_rules(ast, builder, t_option):
     rule_counter += 1
 
     if ast.type == clingo.ast.ASTType.Rule:
-        # Separates the &label literals in the body from the rest
-        label_body, literals, other = handle_body_labels(ast['body'])
 
-        # Associates fired number and function name
-        global traces
-        traces[rule_counter] = {'head':(str(ast['head']['atom']['term']['name']), ast['head']['atom']['term']['arguments']),
-                                'arguments' : list(unique_everseen(map(str, ast['head']['atom']['term']['arguments'] + body_variables(ast['body'])))),
-                                'body': [(lit['atom']['term']['name'], lit['atom']['term']['arguments']) for lit in literals if lit['sign']==clingo.ast.Sign.NoSign] }
-
-        if ast['head'].type == clingo.ast.ASTType.TheoryAtom:  # For label rules
-            generated_rules = "%{comment}\n{head} :- {body}.\n".\
-                format(comment=str(ast),
-                       head=str(ast['head']),
-                       body=",".join([str(add_prefix('holds_', lit)) for lit in literals]))
+        if str(ast['head']).startswith("explain_"):
+            generated_rules = str(ast)
         else:
-            # Generates fired rule
-            fired_head = "fired_{counter}({arguments})".format(counter=str(rule_counter), arguments=",".join(unique_everseen(map(str, ast['head']['atom']['term']['arguments'] + body_variables(ast['body'])))))
-            if literals or other:
-                fired_rule = "{head} :- {body}.".format(head=fired_head, body= ",".join([str(add_prefix('holds_', lit)) for lit in literals] + list(map(str,other))))
+            # Separates the &label literals in the body from the rest
+            label_body, literals, other = handle_body_labels(ast['body'])
+
+            # Associates fired number and function name
+            global traces
+            traces[rule_counter] = {'head':(str(ast['head']['atom']['term']['name']), ast['head']['atom']['term']['arguments']),
+                                    'arguments' : list(unique_everseen(map(str, ast['head']['atom']['term']['arguments'] + body_variables(ast['body'])))),
+                                    'body': [(lit['atom']['term']['name'], lit['atom']['term']['arguments']) for lit in literals if lit['sign']==clingo.ast.Sign.NoSign] }
+
+            if ast['head'].type == clingo.ast.ASTType.TheoryAtom:  # For label rules
+                generated_rules = "%{comment}\n{head} :- {body}.\n".\
+                    format(comment=str(ast),
+                           head=str(ast['head']),
+                           body=",".join([str(add_prefix('holds_', lit)) for lit in literals]))
             else:
-                fired_rule = fired_head + "."
+                # Generates fired rule
+                fired_head = "fired_{counter}({arguments})".format(counter=str(rule_counter), arguments=",".join(unique_everseen(map(str, ast['head']['atom']['term']['arguments'] + body_variables(ast['body'])))))
+                if literals or other:
+                    fired_rule = "{head} :- {body}.".format(head=fired_head, body= ",".join([str(add_prefix('holds_', lit)) for lit in literals] + list(map(str,other))))
+                else:
+                    fired_rule = fired_head + "."
 
-            # Generates holds rule
-            holds_rule = "holds_{name}({arguments}) :- {body}.".\
-                format(name=str(ast['head']['atom']['term']['name']),
-                       arguments=",".join(map(str, ast['head']['atom']['term']['arguments'])),
-                       body=fired_head)
+                # Generates holds rule
+                holds_rule = "holds_{name}({arguments}) :- {body}.".\
+                    format(name=str(ast['head']['atom']['term']['name']),
+                           arguments=",".join(map(str, ast['head']['atom']['term']['arguments'])),
+                           body=fired_head)
 
-            # Generates label rules
-            label_rules = ""
-            for label_ast in label_body:
-                label_rules += "{head} :- {body}.\n".format(head=str(label_ast), body=fired_head)
+                # Generates label rules
+                label_rules = ""
+                for label_ast in label_body:
+                    label_rules += "{head} :- {body}.\n".format(head=str(label_ast), body=fired_head)
 
-            # Generates a comment
-            comment = "%" + str(ast)
+                # Generates a comment
+                comment = "%" + str(ast)
 
-            generated_rules = comment + "\n" + fired_rule + "\n" + holds_rule + "\n" + label_rules
+                generated_rules = comment + "\n" + fired_rule + "\n" + holds_rule + "\n" + label_rules
 
-        if t_option:
-            print(generated_rules)
-            return
-
-        # Adds the generated rules to the base program
-        try:
-            clingo.parse_program("#program base." + generated_rules, lambda new_ast: builder.add(new_ast))
-        except RuntimeError as error:
-            if str(error) == "syntax error":
-                print("Error de traducción:\n\n{0}".format(generated_rules))
-                exit(0)
+        add_to_base(generated_rules, builder, t_option)
 
 
 def build_fired_dict(m):
@@ -114,7 +153,7 @@ def build_fired_dict(m):
     return fired_values
 
 
-def build_causes(traces, fired_values):
+def build_causes_dict(traces, fired_values):
     '''
     Builds a dictionary containing, for each fired atom in a model, the atoms (with values) that caused its derivation.
     It performs this crossing the info in 'traces' and 'fired_values'
@@ -179,7 +218,7 @@ def _ascii_tree_explanation(atom, explanation, level):
     @param clingo.Symbol atom: atom to be explained.
     @param Dict explanation: dict representing the explanation of the atom.
     @param int level: depth level used to correctly draw the branch of the tree.
-    @return string: an string containing the ascii tree explanation.
+    @return str: an str containing the ascii tree explanation.
     '''
     branch = "  " * level + "|--"
     subtree = ""
@@ -200,7 +239,7 @@ def ascii_tree_explanation(atom, explanation):
     '''
     @param clingo.Symbol atom: atom to be explained.
     @param Dict explanation: the explanation of the atom.
-    @return string: an string containing the ascii tree explanation.
+    @return str: an str containing the ascii tree explanation.
     '''
     return _ascii_tree_explanation(atom, explanation, 0)
 
@@ -216,10 +255,16 @@ def main():
     # Gets clingo control object (with '-n 0')
     control = clingo.Control(["-n 0", "--keep-facts"])
 
+    original_program = args.infile.read()
+
+    # Preprocessing original program
+    explain_sentences = get_explain_sentences(original_program)
+
     # Sets theory atom &label and parses/handles input program
     with control.builder() as builder:
         clingo.parse_program("#program base. #theory label {t { }; &label/0: t, any}.", lambda ast: builder.add(ast))
-        clingo.parse_program("#program base." + args.infile.read(), lambda ast: generate_rules(ast, builder, args.t))
+        clingo.parse_program("#program base." + explain_sentences, lambda ast: generate_explain_rules(ast, builder, args.t))
+        clingo.parse_program("#program base." + original_program, lambda ast: generate_fired_holds_rules(ast, builder, args.t))
 
     # JUST FOR DEBUGGING TODO: delete this
     if args.t:
@@ -244,12 +289,21 @@ def main():
             sol_n += 1
             print("Answer: " + str(sol_n))
 
-            causes = build_causes(traces, build_fired_dict(m))
+            fired_explains = [remove_prefix("explain_", a) for a in find_and_remove_by_prefix(m, 'explain_')]
+            causes = build_causes_dict(traces, build_fired_dict(m))
 
-            for fired_atom in causes.keys():
-                print(">> {}".format(fired_atom))
-                for e in build_explanations(fired_atom, causes):
-                    print(ascii_tree_explanation(fired_atom, e))
+            if explain_sentences and fired_explains:
+                atoms_to_explain = [a for a in causes.keys() if a in fired_explains]
+            elif explain_sentences and not fired_explains:
+                print("Any explain rule was activated.")
+                atoms_to_explain = []
+            else:
+                atoms_to_explain = causes.keys()
+
+            for a in atoms_to_explain:
+                print(">> {}".format(a))
+                for e in build_explanations(a, causes):
+                    print(ascii_tree_explanation(a, e))
 
             print()
 
