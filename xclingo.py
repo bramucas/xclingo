@@ -2,28 +2,19 @@
 import sys
 import argparse
 import clingo
-import itertools
-
-
-class Observer:
-    def rule(self, is_choice, head, body):
-       print("[" + str(is_choice) + "] " + str(head) + " :- " + str(body))
-
+from more_itertools import unique_everseen
+from clingo_utilities import find_by_prefix, body_variables, add_prefix
 
 rule_counter = 0
-traces  = {}
-
-
-def holds_prefix(atom):
-    # Returns the 'holds' version of the given atom while handling negation.
-    if atom.startswith("not"):
-        return atom.replace("not ", "not holds_")
-    else:
-        return "holds_" + atom
+traces = {}
 
 
 def handle_body_labels(body_asts):
-    # Separates the asts within the body depending on their type (labels, literals, other).
+    '''
+    @param List[clingo.ast.AST] body_asts:
+    @return (label_body, literals, other): tuple containing the list of label theory atoms, the symbolic atoms and
+    the rest (respectively).
+    '''
     label_body = []
     literals = []
     other = []
@@ -39,43 +30,17 @@ def handle_body_labels(body_asts):
     return label_body, literals, other
 
 
-def body_variables(body_asts):
-    # Returns a list containing the name of the variables used in the given body.
-    vars = []
-
-    for ast in body_asts:
-        if ast['atom'].type == clingo.ast.ASTType.SymbolicAtom:
-            for a in ast['atom']['term']['arguments']:
-                if a.type == clingo.ast.ASTType.Variable:
-                    vars.append(a)
-        elif ast['atom'].type == clingo.ast.ASTType.Comparison:
-            if ast['atom']['left'].type == clingo.ast.ASTType.Variable:
-                vars.append(ast['atom']['left'])
-            if ast['atom']['right'].type == clingo.ast.ASTType.Variable:
-                vars.append(ast['atom']['right'])
-
-    return vars
-
-
-def unique(list):
-    unique = []
-
-    for e in list:
-        if e not in unique:
-            unique.append(e)
-
-    return unique
-
-
 def generate_rules(ast, builder, t_option):
-    """
-    Generates the label rules, the fired rules and the holds rules for the given ast and adds it to the 'base'
-    program via the given builder.
+    '''
+    Generates the label rules (unuseful for now), the fired rules and the holds rules for the given ast rule and adds them
+    to the 'base' program via the given builder.
 
-    :param ast: the AST from which the rules will be generated
-    :param builder: clingo's control builder
-    :return: None
-    """
+    @todo: label rules must be generated from 'magic comments' and not from theory atoms.
+
+    @param clingo.ast.AST ast: the AST from which the rules will be generated
+    @param clingo.ProgramBuilder: builder of the clingo control object that will receive the generated rules.
+    @return: None
+    '''
     global rule_counter
     rule_counter += 1
 
@@ -86,19 +51,19 @@ def generate_rules(ast, builder, t_option):
         # Associates fired number and function name
         global traces
         traces[rule_counter] = {'head':(str(ast['head']['atom']['term']['name']), ast['head']['atom']['term']['arguments']),
-                                'arguments' : unique(map(str, ast['head']['atom']['term']['arguments'] + body_variables(ast['body']))),
+                                'arguments' : list(unique_everseen(map(str, ast['head']['atom']['term']['arguments'] + body_variables(ast['body'])))),
                                 'body': [(lit['atom']['term']['name'], lit['atom']['term']['arguments']) for lit in literals if lit['sign']==clingo.ast.Sign.NoSign] }
 
-        if ast['head'].type == clingo.ast.ASTType.TheoryAtom:
+        if ast['head'].type == clingo.ast.ASTType.TheoryAtom:  # For label rules
             generated_rules = "%{comment}\n{head} :- {body}.\n".\
                 format(comment=str(ast),
                        head=str(ast['head']),
-                       body=",".join(map(holds_prefix, map(str, literals))))
+                       body=",".join([str(add_prefix('holds_', lit)) for lit in literals]))
         else:
             # Generates fired rule
-            fired_head  =  "fired_{counter}({arguments})".format(counter=str(rule_counter), arguments=",".join(unique(map(str, ast['head']['atom']['term']['arguments'] + body_variables(ast['body'])))))
+            fired_head = "fired_{counter}({arguments})".format(counter=str(rule_counter), arguments=",".join(unique_everseen(map(str, ast['head']['atom']['term']['arguments'] + body_variables(ast['body'])))))
             if literals or other:
-                fired_rule = "{head} :- {body}.".format(head=fired_head, body= ",".join( list(map(holds_prefix, map(str, literals))) + list(map(str,other))))
+                fired_rule = "{head} :- {body}.".format(head=fired_head, body= ",".join([str(add_prefix('holds_', lit)) for lit in literals] + list(map(str,other))))
             else:
                 fired_rule = fired_head + "."
 
@@ -131,118 +96,96 @@ def generate_rules(ast, builder, t_option):
                 exit(0)
 
 
-def replace_by_fired_values(name_value, variables):
-    fired_values = []
+def build_fired_dict(m):
+    '''
+    Build a dictionary containing, for each fired id, the list of the different fired values in that given model.
+    @param clingo.Model m: the model that contains the fired atoms.
+    @return Dict: a dictionary with the different fired values indexed by fired id.
+    '''
+    fired_values = dict()
 
-    for v in variables:
-        fired_values.append(name_value[str(v)])
+    for f in find_by_prefix(m, "fired_"):
+        fired_id = int(f.name.split("fired_")[1])
+        if fired_id in fired_values:
+            fired_values[fired_id].append(f.arguments)
+        else:
+            fired_values[fired_id] = [f.arguments]
 
     return fired_values
 
 
-def fired_body(name_value, original_body):
-    fired_body = []
-
-    for (name, variables) in original_body:
-        fired_body.append(clingo.Function(name, replace_by_fired_values(name_value, variables)))
-
-    return fired_body
-
-
-def build_causes(traces, fireds):
+def build_causes(traces, fired_values):
+    '''
+    Builds a dictionary containing, for each fired atom in a model, the atoms (with values) that caused its derivation.
+    It performs this crossing the info in 'traces' and 'fired_values'
+    @param Dict traces: a dictionary (indexed by fired id) containing the head and the body of the original rules.
+    @param Dict fired_values: a dictionary (indexed by fired id) that contains the fired values in a model.
+    @return Dict:
+    '''
     causes = dict()
 
-    for id, fired_values_list in fireds.items():
+    for id, fired_values_list in fired_values.items():
         for fired_values in fired_values_list:
             # id -> se ha disparado ese fired una vez por cada valor en fired_values_list
             # fired_values -> los valores con los que se ha disparado
 
-            # Bindear nombres de variables y valores
-            name_value = dict()
+            # Bindear nombres de variables y valores (basado en el orden)
+            var_val = dict()
             for i in range(0,len(fired_values)):
-                name_value[traces[id]['arguments'][i]] = fired_values[i]
+                var_val[traces[id]['arguments'][i]] = fired_values[i]
 
-            # Reconstruir las explicaciones
+            # Reconstruir las causas usando los valores y el cuerpo
             (name, variables) = traces[id]['head']
-            head = clingo.Function(name, replace_by_fired_values(name_value, variables))
-            try:
-                causes[head].append(fired_body(name_value, traces[id]['body']))
-            except KeyError:
-                causes[head] = [fired_body(name_value, traces[id]['body'])]
+            head = clingo.Function(name, [var_val[str(v)] for v in variables])
+            fired_body = [clingo.Function(name, [var_val[str(v)] for v in variables] ) for (name, variables) in traces[id]['body']]
+            if head in causes:
+                causes[head].append(fired_body)
+            else:
+                causes[head] = [fired_body]
 
     return causes
 
-#TODO: remove this
-def build_explanations_old(atom, causes):
-    # Not stable
-    explanations = []
-
-    for alt in causes[atom]:
-        e_list = []
-        for c in alt:
-            if e_list:
-                aux = []
-                for e in e_list:
-                    e[c] = build_explanations(c, causes)
-                    aux.append(e)
-                #e_list = itertools.product(e_list, {c: build_explanations(c, causes)})
-                e_list = aux
-                #print(aux)
-            else:
-                e_list.append({c: build_explanations(c, causes)})
-
-            explanations.append(list(e_list))
-
-    # Expand explanations
-    expanded = []
-    # For each e in explanations must be one or more expanded explanations
-    for e in explanations:
-        print("\t"+str(e))
-        #expanded.append(x)
-
-    return expanded
-
 
 def build_explanations(atom, causes):
-    """
-    Recursive and without cache.
-    """
-
+    '''
+    Returns a list containing all the possibles explanations for the given atom based on the given 'causes' dict.
+    @param clingo.Symbol atom: the atom to be explained.
+    @param Dict causes: dict containing all the possible causes for each atom in a model.
+    @return List[Dict]: list of dictionaries in where each dict is an explanation for the atom.
+    '''
     explanations = []
 
-    for alternative in causes[atom]:
+    for alternative in causes[atom]:  # Each alternative is a list of derived atoms
         if alternative:
-            alt_e = {}
-            for c in alternative:
-                alt_e[c] = build_explanations(c,causes)
-            explanations.append(alt_e)
+            possible_explanations = [{}]  # Initialize with an empty explanation
+            for a in alternative:  # Each atom in 'alternative' can have multiple explanations. Each combination is an atom explanation.
+                a_explanations = build_explanations(a, causes)
+                for i in range(len(possible_explanations)):
+                    p_e = possible_explanations.pop()
+                    for e in a_explanations:
+                        copy = p_e.copy()
+                        copy[a] = e
+                        possible_explanations.insert(0,copy)
+            explanations.extend(possible_explanations)
         else:
-            # Atom is fact
+            # alternative == [] (empty list), then one explanation is that the atom is fact.
             explanations.append(1)
-
-    #TODO: to expand explanations
-    # Maybe it is possible to do it during the computation. This way we avoid to iterate the explanations
-    # multiple times.
-    expanded = []
-    for e in explanations:
-        # Each e is a dict, each dict is a non expanded explanation
-        pass
 
     return explanations
 
 
 def main():
-    # Handle arguments of xclingo
+    # Handles arguments of xclingo
     parser = argparse.ArgumentParser(description='Tool for debugging and explaining ASP programs')
     parser.add_argument('-t', action='store_true', default=False,
                         help="If enabled, the program will just show the translation of the input program")
     parser.add_argument('infile', nargs='?', type=argparse.FileType('r'), default=sys.stdin, help="ASP program")
     args = parser.parse_args()
 
-    # Get clingo control object (with '-n 0')
+    # Gets clingo control object (with '-n 0')
     control = clingo.Control(["-n 0", "--keep-facts"])
 
-    # Set theory atom &label and parse/handle input program
+    # Sets theory atom &label and parses/handles input program
     with control.builder() as builder:
         clingo.parse_program("#program base. #theory label {t { }; &label/0: t, any}.", lambda ast: builder.add(ast))
         clingo.parse_program("#program base." + args.infile.read(), lambda ast: generate_rules(ast, builder, args.t))
@@ -251,40 +194,26 @@ def main():
     if args.t:
         exit(0)
 
-    # Register observer and do drounding
-    #control.register_observer(Observer(), False)  # ¿Use Observer for linking labels to rules?
     control.ground([("base", [])])
 
-    # Extract &label atoms and process labels
-    for atom in control.theory_atoms:
-        if atom.term.name == "label" and len(atom.term.arguments) == 0:  # '&label' atoms with 0 arguments
-            #DUDA: ¿atom.elements always a list of len = 1?
-            # Replace % placeholders by the values.
-            for e in atom.elements:
-                message = str(e.terms[0])
-                for t in e.terms[1:]:
-                    message = message.replace("%", str(t), 1)
+    # Extracts &label atoms and process labels
+    # for atom in control.theory_atoms:
+    #     if atom.term.name == "label" and len(atom.term.arguments) == 0:  # '&label' atoms with 0 arguments
+    #         #DUDA: ¿atom.elements always a list of len = 1?
+    #         # Replace % placeholders by the values.
+    #         for e in atom.elements:
+    #             message = str(e.terms[0])
+    #             for t in e.terms[1:]:
+    #                 message = message.replace("%", str(t), 1)
 
-    # Solve and print debug message
+    # Solves and prints explanations
     with control.solve(yield_=True) as it:
         sol_n = 0
         for m in it:
             sol_n += 1
             print("Answer: " + str(sol_n))
-            print("traces -------\n" + str(traces))
 
-            fireds = dict()
-            fired_symbols = [sym for sym in m.symbols(atoms=True) if str.startswith(str(sym), 'fired_')]
-            for f in fired_symbols:
-                try:
-                    fireds[int(f.name.split("fired_")[1])].append(f.arguments)
-                except KeyError:
-                    fireds[int(f.name.split("fired_")[1])] = [f.arguments]
-
-            causes = build_causes(traces, fireds)
-
-            # Debug
-            print("causes----\n" + str(causes))
+            causes = build_causes(traces, build_fired_dict(m))
 
             for fired_atom in causes.keys():
                 print(fired_atom)
