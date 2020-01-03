@@ -1,8 +1,8 @@
 % Uncomment if using gringo/clingo
 % theory label {t { }; &label/0: t, any}.
 
-person(gabriel).
-person(clare).
+person(gabriel) :- not person(clare).
+person(clare) :- not person(gabriel).
 
 drive(gabriel).
 resist(gabriel).
@@ -26,3 +26,5 @@ sentence(P, prison) :-
 
 sentence(P, innocent) :- &label{"% is innocent until proven guilty",P},
     person(P), not sentence(P, prison).
+
+%!explain sentence(P, X) :- person(clare).
