@@ -174,6 +174,37 @@ def build_explanations(atom, causes):
     return explanations
 
 
+def _ascii_tree_explanation(atom, explanation, level):
+    '''
+    @param clingo.Symbol atom: atom to be explained.
+    @param Dict explanation: dict representing the explanation of the atom.
+    @param int level: depth level used to correctly draw the branch of the tree.
+    @return string: an string containing the ascii tree explanation.
+    '''
+    branch = "  " * level + "|--"
+    subtree = ""
+
+    # Compute subtree
+    if explanation != 1:
+        for a, a_explanation in explanation.items():
+            subtree += _ascii_tree_explanation(a, a_explanation, level + 1)
+
+    # Build tree
+    if level == 0:
+        return "{root}\n{subtree}".format(root=str(atom), subtree=subtree)
+    else:
+        return "{branch}{node}\n{subtree}".format(branch=branch, node=str(atom), subtree=subtree)
+
+
+def ascii_tree_explanation(atom, explanation):
+    '''
+    @param clingo.Symbol atom: atom to be explained.
+    @param Dict explanation: the explanation of the atom.
+    @return string: an string containing the ascii tree explanation.
+    '''
+    return _ascii_tree_explanation(atom, explanation, 0)
+
+
 def main():
     # Handles arguments of xclingo
     parser = argparse.ArgumentParser(description='Tool for debugging and explaining ASP programs')
@@ -216,9 +247,9 @@ def main():
             causes = build_causes(traces, build_fired_dict(m))
 
             for fired_atom in causes.keys():
-                print(fired_atom)
+                print(">> {}".format(fired_atom))
                 for e in build_explanations(fired_atom, causes):
-                    print("\t" + str(e))
+                    print(ascii_tree_explanation(fired_atom, e))
 
             print()
 
