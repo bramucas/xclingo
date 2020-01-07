@@ -11,7 +11,7 @@ alcohol(gabriel, 40).
 drive(clare).
 alcohol(clare, 0).
 
-punish(P) :- &label{"% has driven drunk", P},
+punish(P) :- &label{"% has driven drunk", P, caca(P,A)},
     drive(P), alcohol(P,A), A>30.
 
 punish(P) :- &label{"% has resisted to authority", P},
@@ -28,3 +28,6 @@ sentence(P, innocent) :- &label{"% is innocent until proven guilty",P},
     person(P), not sentence(P, prison).
 
 %!explain sentence(P, X) :- person(clare).
+
+%!label_atoms {"% has been sentenced to prison",P} sentence(P,X) :- X=prison.
+%!label_atoms {"% is innocent",P} sentence(P,X) :- X=innocent.

@@ -10,6 +10,20 @@ rule_counter = 0
 traces = {}
 
 
+def get_multiple_label_rules(program):
+    '''
+    Returns a list with the multiple label sentences found in the given program.
+    @param program:
+    @return:
+    '''
+    multiple_label_rules = ""
+    for hit in re.findall("%!label_atoms \{(.*)\} (([a-z][a-zA-Z]*)(\(.*\))?([ ]*:-[ ]*(.*))?.)", program):
+        # 0: "label",v1,v2  1: complete rule  2: name  3: arguments  4: separator and body  5: body.
+        multiple_label_rules += "&label_atoms{{{name}{arguments},{parameters} : }} :- {name}{arguments}{rest_body}.\n".format(
+            name=hit[2], arguments=hit[3], parameters=hit[0], rest_body="," + hit[5] if hit[5] else "")
+    return multiple_label_rules
+
+
 def get_explain_sentences(program):
     '''
     Returns a list with the explain sentences found in the given program.
@@ -62,6 +76,16 @@ def add_to_base(generated_rules, builder, t_option):
         if str(error) == "syntax error":
             print("Error de traducción:\n\n{0}".format(generated_rules))
             exit(0)
+
+
+def generate_label_atoms_rules(ast, builder, t_option):
+    # Generate the multiple label rule for the given ast and adds it to the base program
+    if ast.type == clingo.ast.ASTType.Rule:
+        generated_rule = "{head}:-{body}.".format(
+            head=str(ast['head']),
+            body=",".join([str(add_prefix("holds_",lit)) for lit in ast['body']]))
+
+        add_to_base(generated_rule, builder, t_option)
 
 
 def generate_explain_rules(ast, builder, t_option):
@@ -259,11 +283,14 @@ def main():
 
     # Preprocessing original program
     explain_sentences = get_explain_sentences(original_program)
+    label_atoms_sentences = get_multiple_label_rules(original_program)
 
     # Sets theory atom &label and parses/handles input program
     with control.builder() as builder:
         clingo.parse_program("#program base. #theory label {t { }; &label/0: t, any}.", lambda ast: builder.add(ast))
+        clingo.parse_program("#program base. #theory label_atoms {t { }; &label_atoms/0: t, any}.", lambda ast: builder.add(ast))
         clingo.parse_program("#program base." + explain_sentences, lambda ast: generate_explain_rules(ast, builder, args.t))
+        clingo.parse_program("#program base." + label_atoms_sentences, lambda ast: generate_label_atoms_rules(ast, builder, args.t))
         clingo.parse_program("#program base." + original_program, lambda ast: generate_fired_holds_rules(ast, builder, args.t))
 
     # JUST FOR DEBUGGING TODO: delete this
@@ -273,14 +300,18 @@ def main():
     control.ground([("base", [])])
 
     # Extracts &label atoms and process labels
-    # for atom in control.theory_atoms:
-    #     if atom.term.name == "label" and len(atom.term.arguments) == 0:  # '&label' atoms with 0 arguments
-    #         #DUDA: ¿atom.elements always a list of len = 1?
-    #         # Replace % placeholders by the values.
-    #         for e in atom.elements:
-    #             message = str(e.terms[0])
-    #             for t in e.terms[1:]:
-    #                 message = message.replace("%", str(t), 1)
+    labels_dict = {}
+    for atom in control.theory_atoms:
+        if atom.term.name == "label_atoms" and len(atom.term.arguments) == 0:  # '&label' atoms with 0 arguments
+            #DUDA: ¿atom.elements always a list of len = 1?
+            # Replace % placeholders by the values.
+            for e in atom.elements:
+                label = str(e.terms[1])
+                for t in e.terms[2:]:
+                    label = label.replace("%", str(t), 1)
+            labels_dict[str(e.terms[0])] = label
+
+    print(labels_dict)
 
     # Solves and prints explanations
     with control.solve(yield_=True) as it:
