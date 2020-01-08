@@ -22,8 +22,8 @@ def get_multiple_label_rules(program):
     multiple_label_rules = ""
     for hit in re.findall("%!label_atoms \{(.*)\} (([a-z][a-zA-Z]*)(\(.*\))?([ ]*:-[ ]*(.*))?.)", program):
         # 0: "label",v1,v2  1: complete rule  2: name  3: arguments  4: separator and body  5: body.
-        multiple_label_rules += "&label_atoms{{{name}{arguments},{parameters} : }} :- {name}{arguments}{rest_body}.\n".format(
-            name=hit[2], arguments=hit[3], parameters=hit[0], rest_body="," + hit[5] if hit[5] else "")
+        multiple_label_rules += "&label_atoms{{{name}{arguments},{parameters} : }} :- {name}{arguments}{rest_body}.\n".\
+            format(name=hit[2], arguments=hit[3], parameters=hit[0], rest_body="," + hit[5] if hit[5] else "")
     return multiple_label_rules
 
 
@@ -128,9 +128,10 @@ def generate_fired_holds_rules(ast, builder, t_option):
             # Associates fired number and function name
             global traces
             traces[rule_counter] = {
-                'head':(str(ast['head']['atom']['term']['name']), ast['head']['atom']['term']['arguments']),
-                'arguments' : list(unique_everseen(map(str, ast['head']['atom']['term']['arguments'] + body_variables(ast['body'])))),
-                'body': [(lit['atom']['term']['name'], lit['atom']['term']['arguments']) for lit in literals if lit['sign']==clingo.ast.Sign.NoSign] }
+                'head': (str(ast['head']['atom']['term']['name']), ast['head']['atom']['term']['arguments']),
+                'arguments': list(unique_everseen(map(str, ast['head']['atom']['term']['arguments'] + body_variables(ast['body'])))),
+                'body': [(lit['atom']['term']['name'], lit['atom']['term']['arguments']) for lit in literals if lit['sign'] == clingo.ast.Sign.NoSign]
+            }
 
             if ast['head'].type == clingo.ast.ASTType.TheoryAtom:  # For label rules
                 generated_rules = "%{comment}\n{head} :- {body}.\n".\
@@ -145,7 +146,7 @@ def generate_fired_holds_rules(ast, builder, t_option):
                 if literals or other:
                     fired_rule = "{head} :- {body}.".format(
                         head=fired_head,
-                        body= ",".join([str(add_prefix('holds_', lit)) for lit in literals] + list(map(str,other))))
+                        body=",".join([str(add_prefix('holds_', lit)) for lit in literals] + list(map(str, other))))
                 else:
                     fired_rule = fired_head + "."
 
@@ -186,14 +187,18 @@ def build_fired_dict(m):
     return fired_values
 
 
-def build_causes_dict(traces, fired_values, labels_dict):
+def build_causes(traces, fired_values, labels_dict, auto_labelling):
     """
     Builds a dictionary containing, for each fired atom in a model, the atoms (with values) that caused its derivation.
     It performs this crossing the info in 'traces' and 'fired_values'
     @param Dict traces: a dictionary (indexed by fired id) containing the head and the body of the original rules.
     @param Dict fired_values: a dictionary (indexed by fired id) that contains the fired values in a model.
     @param Dict labels_dict: a dictionary (indexed by atom with values) that contains their processed labels.
-    @return Dict:
+    @param str auto_labelling: string constant chosen by the user. Options are:
+                - none : atoms and rules just have the labels found on the original program.
+                - facts : rules with empty body must be additionally labeled with a string version of its head.
+                - all : every rule must be additionally labeled with a string version of its head.
+    @return DataFrame:
     """
     causes = []
 
@@ -212,13 +217,20 @@ def build_causes_dict(traces, fired_values, labels_dict):
             head = clingo.Function(name, [var_val[str(v)] for v in variables])
             fired_body = [clingo.Function(name, [var_val[str(v)] for v in variables]) for (name, variables) in traces[fired_id]['body']]
 
+            # Labels
+            labels = labels_dict[str(head)] if str(head) in labels_dict else []
+            if auto_labelling == "all" or (auto_labelling == "facts" and fired_body == []):
+                labels.append(str(head))
+
             causes.append(
                 {'fired_id': fired_id,
                  'fired_head': head,
-                 'labels': labels_dict[str(head)] if str(head) in labels_dict else [],
+                 'labels': labels,
                  'fired_body': fired_body})
 
-    return DataFrame(causes)
+    causes_df = DataFrame(causes)
+
+    return causes_df
 
 
 def build_labels_dict(c_control):
@@ -250,70 +262,69 @@ def build_explanations(atom, causes):
     """
     explanations = []
 
-    # Each alternative is a list of derived atoms (can be empty)
-    for alternative in causes[causes.fired_head == atom]['fired_body']:
-        if alternative:
-            alternative_explanations = [{}]  # Explanations of the current alternative.
-            # Each atom in 'alternative' can have multiple explanations. Each combination is an atom explanation.
-            for a in alternative:
-                a_explanations = build_explanations(a, causes)
-                a_labels = list(chain.from_iterable(causes[causes.fired_head == a]['labels']))
+    # Each alt_rule is a list of derived atoms (can be empty)
+    for index, alt_rule in causes[causes.fired_head == atom][['labels', 'fired_body']].iterrows():
 
-                if a_labels:  # If a have some label
-                    for label in a_labels:
-                        # Add each atom explanation ('a': e) to the rest of explanations of the current alternative.
-                        for i in range(len(alternative_explanations)):
-                            a_expl = alternative_explanations.pop()
-                            for e in a_explanations:
-                                copy = a_expl.copy()
-                                copy[label] = e
-                                alternative_explanations.insert(0,copy)
-                else:  # If a have no label
-                    for i in range(len(alternative_explanations)):
-                        # The atom explanations (e) are merged directly with the rest of the current alternative.
-                        a_expl = alternative_explanations.pop()
-                        for e in [e for e in a_explanations if e != 1]:
+        if alt_rule['fired_body']:
+            alt_rule_explanations = [{}]  # Explanations of the current alt_rule.
+            # Each atom in 'alt_rule' can have multiple explanations. Each combination is an atom explanation.
+            for a in alt_rule['fired_body']:
+                a_explanations = build_explanations(a, causes)
+
+                if a_explanations != [{}]:  # If a is not fact
+                    for i in range(len(alt_rule_explanations)):
+                        # The atom explanations (e) are merged directly with the rest of the current alt_rule.
+                        a_expl = alt_rule_explanations.pop()
+                        for e in [a_e for a_e in a_explanations if a_e != {}]:
                             copy = a_expl.copy()
                             copy.update(e)
-                            alternative_explanations.insert(0, copy)
+                            alt_rule_explanations.insert(0, copy)
 
-            explanations.extend(alternative_explanations)
         else:
-            # alternative == [] (empty list), then one explanation is that the atom is fact.
-            explanations.append({})
+            # alt_rule == [] (empty list), then one explanation is that the atom is fact.
+            alt_rule_explanations = [{}]
+
+        if alt_rule['labels']:
+            for label in alt_rule['labels']:
+                for e in alt_rule_explanations:
+                    explanations.append({label: e})
+        else:
+            explanations.extend(alt_rule_explanations)
 
     return explanations
 
 
-def _ascii_tree_explanation(atom, explanation, level):
+def _ascii_tree_explanation(explanation, level):
     """
-    @param clingo.Symbol atom: atom to be explained.
-    @param Dict explanation: dict representing the explanation of the atom.
+    @param Dict explanation: dict representing the explanation of an atom.
     @param int level: depth level used to correctly draw the branch of the tree.
     @return str: an str containing the ascii tree explanation.
     """
-    branch = "  " * level + "|--"
-    subtree = ""
 
-    # Compute subtree
-    if explanation != {}:
-        for a, a_explanation in explanation.items():
-            subtree += _ascii_tree_explanation(a, a_explanation, level + 1)
+    tree = ""
+    branch = "  |" * (level + 1) + "--"
 
-    # Build tree
-    if level == 0:
-        return "{root}\n{subtree}".format(root=str(atom), subtree=subtree)
-    else:
-        return "{branch}{node}\n{subtree}".format(branch=branch, node=str(atom), subtree=subtree)
+    # Builds the tree
+    if explanation:
+        # Adds the root of the explanation
+        if level == 0:
+            tree += "  *\n"
+        # One pair per child   {child1: child_e1, child2: child_e2}
+        for child, chidl_e in explanation.items():
+            tree += "{branch}{node}\n{subtree}".format(branch=branch, node=str(child),
+                                                       subtree=_ascii_tree_explanation(chidl_e, level+1))
+    elif level == 0:
+        tree += "\t1\n"
+
+    return tree
 
 
-def ascii_tree_explanation(atom, explanation):
+def ascii_tree_explanation(explanation):
     """
-    @param clingo.Symbol atom: atom to be explained.
-    @param Dict explanation: the explanation of the atom.
+    @param Dict explanation: an explanation
     @return str: an str containing the ascii tree explanation.
     """
-    return _ascii_tree_explanation(atom, explanation, 0)
+    return _ascii_tree_explanation(explanation, 0)
 
 
 def main():
@@ -321,6 +332,8 @@ def main():
     parser = argparse.ArgumentParser(description='Tool for debugging and explaining ASP programs')
     parser.add_argument('-t', action='store_true', default=False,
                         help="If enabled, the program will just show the translation of the input program")
+    parser.add_argument('--auto-labelling', type=str, choices=["none", "facts", "all"], default="none",
+                        help="Automatically creates labels for the rules of the program. Default: none.")
     parser.add_argument('infile', nargs='?', type=argparse.FileType('r'), default=sys.stdin, help="ASP program")
     args = parser.parse_args()
 
@@ -329,7 +342,7 @@ def main():
 
     original_program = args.infile.read()
 
-    # Preprocessing original program
+    # Pre-processing original program
     explain_sentences = get_explain_sentences(original_program)
     label_atoms_sentences = get_multiple_label_rules(original_program)
 
@@ -357,7 +370,7 @@ def main():
             print("Answer: " + str(sol_n))
 
             fired_explains = [remove_prefix("explain_", a) for a in find_and_remove_by_prefix(m, 'explain_')]
-            causes = build_causes_dict(traces, build_fired_dict(m), labels_dict)
+            causes = build_causes(traces, build_fired_dict(m), labels_dict, args.auto_labelling)
 
             if explain_sentences and fired_explains:
                 atoms_to_explain = [a for a in causes['fired_head'].unique() if a in fired_explains]
@@ -368,15 +381,9 @@ def main():
                 atoms_to_explain = causes['fired_head']
 
             for a in atoms_to_explain:
-                print(">> {}".format(a))
-                labels = list(chain.from_iterable(causes[causes.fired_head == a]['labels']))
-
+                print(">> {}\n".format(a))
                 for e in build_explanations(a, causes):
-                    if labels:
-                        for label in labels:
-                            print(ascii_tree_explanation(label, e))
-                    else:
-                        print(ascii_tree_explanation(a, e))
+                    print(ascii_tree_explanation(e))
 
             print()
 
