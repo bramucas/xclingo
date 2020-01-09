@@ -20,6 +20,7 @@ sentence(P, prison) :-  punish(P).
 sentence(P, innocent) :-person(P), not sentence(P, prison).
 
 %!explain sentence(P, X).
+%!explain alcohol(P,A) :- A>30.
 
 %!label_atoms {"% was driving",P} drive(P).
 %!label_atoms {"% was drunk",P} alcohol(P,A) :- A>30.
