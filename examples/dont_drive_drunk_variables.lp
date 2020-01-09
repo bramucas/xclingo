@@ -13,10 +13,10 @@ alcohol(clare, 0).
 punish(P) :- drive(P), alcohol(P,A), A>30.
 punish(P) :- resist(P).
 
-%!label_rule {"%P has been sentenced to %",P,prison}
+%!label_rule {"% has been sentenced to %",P,prison}
 sentence(P, prison) :-  punish(P).
 
-%!label_rule {"%P is innocent.",P}
+%!label_rule {"% is innocent.",P}
 sentence(P, innocent) :-person(P), not sentence(P, prison).
 
 %!explain sentence(P, X).
