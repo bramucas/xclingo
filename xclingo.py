@@ -13,10 +13,38 @@ rule_counter = 0
 traces = {}
 
 
+def preprocess_program(program):
+    """
+    Performs a set of different process phases to a given program and return the modified result. This phases are:
+     - label_rule magic comments translation.
+    @param str program: the program that is intended to be process.
+    @return str: the modification of the given program after the different phases.
+    """
+    preprocessed_program = translate_label_rules(program)
+
+    return preprocessed_program
+
+
+def translate_label_rules(program):
+    """
+    Replaces the 'label_rule' magic comments in the given program for a version of the rules labelled with theory atoms.
+    @param str program: the program that is intended to be modified.
+    @return str: the modified program.
+    """
+    for hit in re.findall("(%!label_rule \{(.*)\}[ ]*\n[ ]*([a-z][a-zA-Z]*(\(.*\))?[ ]*:-[ ]*.*).)", program):
+        # 0: original match  1: label_parameters  2: complete original rule  3: parameters of the head (useless)
+        program = program.replace(
+            hit[0],
+            "{rule}, &label_rule{{{label_parameters}}}.\n".format(rule=hit[2], label_parameters=hit[1])
+        )
+
+    return program
+
+
 def get_multiple_label_rules(program):
     """
     Returns a list with the multiple label sentences found in the given program.
-    @param program:
+    @param str program:
     @return:
     """
     multiple_label_rules = ""
@@ -30,7 +58,7 @@ def get_multiple_label_rules(program):
 def get_explain_sentences(program):
     """
     Returns a list with the explain sentences found in the given program.
-    @param program:
+    @param str program:
     @return:
     """
     explain_sentences_string = ""
@@ -159,7 +187,10 @@ def generate_fired_holds_rules(ast, builder, t_option):
                 # Generates label rules
                 label_rules = ""
                 for label_ast in label_body:
-                    label_rules += "{head} :- {body}.\n".format(head=str(label_ast), body=fired_head)
+                    label_rules += "&label_rule{{{fired_id},{label_parameters}}} :- {body}.\n".format(
+                        fired_id=str(rule_counter),
+                        label_parameters=",".join([str(e) for e in label_ast['atom']['elements']]),
+                        body=fired_head)
 
                 # Generates a comment
                 comment = "%" + str(ast)
@@ -219,6 +250,7 @@ def build_causes(traces, fired_values, labels_dict, auto_labelling):
 
             # Labels
             labels = labels_dict[str(head)] if str(head) in labels_dict else []
+            labels.extend(labels_dict[int(fired_id)] if int(fired_id) in labels_dict else [])
             if auto_labelling == "all" or (auto_labelling == "facts" and fired_body == []):
                 labels.append(str(head))
 
@@ -237,18 +269,22 @@ def build_labels_dict(c_control):
     # Extracts &label atoms and process labels
     labels_dict = {}
     for atom in c_control.theory_atoms:
-        if atom.term.name == "label_atoms" and len(atom.term.arguments) == 0:  # '&label_atoms' atoms with 0 arguments
+        if atom.term.name in ["label_atoms", "label_rule"] and len(atom.term.arguments) == 0:  # '&label_atoms' atoms with 0 arguments
             # Replace % placeholders by the values.
             for e in atom.elements:
                 label = str(e.terms[1])
                 for t in e.terms[2:]:
                     label = label.replace("%", str(t), 1)
 
-                at = str(e.terms[0])
-                if at in labels_dict:
-                    labels_dict[at].append(label)
+                if atom.term.name == "label_atoms":
+                    to_be_labelled = str(e.terms[0])
+                elif atom.term.name == "label_rule":
+                    to_be_labelled = int(str(e.terms[0]))
+
+                if to_be_labelled in labels_dict:
+                    labels_dict[to_be_labelled].append(label)
                 else:
-                    labels_dict[at] = [label]
+                    labels_dict[to_be_labelled] = [label]
 
     return labels_dict
 
@@ -345,14 +381,15 @@ def main():
     # Pre-processing original program
     explain_sentences = get_explain_sentences(original_program)
     label_atoms_sentences = get_multiple_label_rules(original_program)
+    preprocessed_program = preprocess_program(original_program)
 
     # Sets theory atom &label and parses/handles input program
     with control.builder() as builder:
-        clingo.parse_program("#program base. #theory label {t { }; &label/0: t, any}.", lambda ast: builder.add(ast))
+        clingo.parse_program("#program base. #theory label_rule {t { }; &label_rule/0: t, any}.", lambda ast: builder.add(ast))
         clingo.parse_program("#program base. #theory label_atoms {t { }; &label_atoms/0: t, any}.", lambda ast: builder.add(ast))
         clingo.parse_program("#program base." + explain_sentences, lambda ast: generate_explain_rules(ast, builder, args.t))
         clingo.parse_program("#program base." + label_atoms_sentences, lambda ast: generate_label_atoms_rules(ast, builder, args.t))
-        clingo.parse_program("#program base." + original_program, lambda ast: generate_fired_holds_rules(ast, builder, args.t))
+        clingo.parse_program("#program base." + preprocessed_program, lambda ast: generate_fired_holds_rules(ast, builder, args.t))
 
     # JUST FOR DEBUGGING TODO: delete this
     if args.t:
