@@ -6,6 +6,7 @@ import clingo
 
 from pandas import DataFrame
 from clingo_utilities import find_by_prefix, remove_prefix, find_and_remove_by_prefix
+from more_itertools import unique_everseen
 import translation
 
 
@@ -136,7 +137,7 @@ def build_explanations(atom, causes):
         else:
             explanations.extend(alt_rule_explanations)
 
-    return explanations
+    return list(unique_everseen(explanations))
 
 
 def _ascii_tree_explanation(explanation, level):
