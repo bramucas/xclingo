@@ -136,11 +136,11 @@ def _build_explanations(atom, causes, stack):
 
                 a_explanations = _build_explanations(a, causes, stack)
 
-                if a_explanations != [{}]:  # If a is not fact
-                    # Initialize with empty explanation if there is nothing yet
-                    if not alt_rule_explanations:
-                        alt_rule_explanations.append({})
+                # Initialize with empty explanation if there is nothing yet
+                if not alt_rule_explanations:
+                    alt_rule_explanations.append({})
 
+                if a_explanations != [{}]:  # If a is not fact
                     for i in range(len(alt_rule_explanations)):
                         # The atom explanations (e) are merged directly with the rest of the current alt_rule.
                         a_expl = alt_rule_explanations.pop()
