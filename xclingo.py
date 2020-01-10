@@ -248,7 +248,7 @@ def main():
             for a in atoms_to_explain:
                 print(">> {}".format(a), end='')
                 a_explanations = build_explanations(a, causes)
-                print("\t[{} explanations]".format(len(a_explanations)))
+                print("\t[{}]".format(len(a_explanations)))
                 for e in a_explanations:
                     print(ascii_tree_explanation(e))
 

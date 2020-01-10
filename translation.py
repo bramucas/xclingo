@@ -1,16 +1,16 @@
-import clingo
+from clingo import Control, parse_program, ast
 import re
 from more_itertools import unique_everseen
-from clingo_utilities import body_variables, add_prefix
+from clingo_utilities import body_variables
 
 
-class XClingoProgramControl(clingo.Control):
+class XClingoProgramControl(Control):
     """
-    Extends clingo.Control class with xclingo functions and parameters.
+    Extends Control class with xclingo functions and parameters.
     """
     _rule_counter = None
     traces = None
-    have_explain = None
+    havesat_explain = None
 
     def __init__(self, *args):
         self.rule_counter = 0
@@ -24,14 +24,91 @@ class XClingoProgramControl(clingo.Control):
         return current
 
 
+class XClingoAST(ast.AST):
+
+    def __init__(self, ast):
+        super().__init__(ast.type, **dict(ast.items()))
+
+    def is_trace_all_rule(self):
+        return self['head']['atom'].type == ast.ASTType.BooleanConstant and self['head']['atom']['value'] == False
+
+    def is_show_all_rule(self):
+        return (self['head'].type == ast.ASTType.TheoryAtom and self['head']['term']['name'] == "label_atoms") \
+            or (str(self['head']).startswith("explain_"))
+
+    def add_prefix(self, prefix):
+        """
+        It will try to add a prefix to this AST. It can raise an exception if the action has no sense (this depends on
+        the type of the AST. Also, the result of executing this method is different depending on the type.
+        @todo: change this function to use get_function() instead making so many comprobations
+
+        @param str prefix: the prefix that is intended to be added to the AST.
+        @return None:
+        """
+
+
+
+        # Handle classic negation
+        if self.type == ast.ASTType.UnaryOperation and self['atom']['term']['operator'] == ast.UnaryOperator.Minus:
+            self['atom']['term']['argument']['name'] = prefix + self['atom']['term']['argument']['name']
+            return
+        # Literals (but just symbolic atoms)
+        elif self.type == ast.ASTType.Literal:
+            atom = XClingoAST(self['atom'])
+            atom.add_prefix(prefix)
+            self['atom'] = atom
+            return
+        elif self.type == ast.ASTType.SymbolicAtom and self['term'].type == ast.ASTType.Function:
+            self['term']['name'] = prefix + self['term']['name']
+        # Rules
+        elif self.type == ast.ASTType.Rule:
+            # Rules with body
+            if self['body']:
+                # Adds the prefix to all the asts in the body but not to the head
+                new_body = []
+                for b_ast in self['body']:
+                    xb_ast = XClingoAST(b_ast)
+                    xb_ast.add_prefix(prefix)
+                    new_body.append(xb_ast)
+                self['body'] = new_body
+                return
+            # Facts (rules without body)
+            else:
+                # Adds the prefix to the ast of the head
+                x_ast = XClingoAST(self['head'])
+                x_ast.add_prefix(prefix)
+                self['head'] = x_ast
+        # It has no sense to add a prefix to this AST
+        else:
+            return
+
+    def get_function(self):
+        if self.type in (ast.ASTType.Function, ast.ASTType.TheoryFunction):
+            return self
+
+        if self.type == ast.ASTType.SymbolicAtom:
+            return XClingoAST(self['term']).get_function()
+
+        if self.type == ast.ASTType.UnaryOperation:
+            return XClingoAST(self['argument']).get_function()
+
+        if self.type == ast.ASTType.Literal:
+            return XClingoAST(self['atom']).get_function()
+
+        if self.type in (ast.ASTType.Comparison, ast.ASTType.BooleanConstant, ast.ASTType.Comparison):
+            return
+
+        raise RuntimeError()
+
+
 def _translate_label_rules(program):
     """
     Replaces the 'label_rule' magic comments in the given program for a version of the rules labelled with theory atoms.
     @param str program: the program that is intended to be modified.
     @return str:
     """
-    for hit in re.findall("(%!trace \{(.*)\}[ ]*\n[ ]*([a-z][a-zA-Z]*(\(.*\))?[ ]*:-[ ]*.*).)", program):
-        # 0: original match  1: label_parameters  2: complete original rule  3: parameters of the head (useless)
+    for hit in re.findall("(%!trace \{(.*)\}[ ]*\n[ ]*([a-z][a-zA-Z]*(?:\(.*\))?[ ]*:-[ ]*.*).)", program):
+        # 0: original match  1: label_parameters  2: complete original rule
         program = program.replace(
             hit[0],
             "{rule}, &label_rule{{{label_parameters}}}.\n".format(rule=hit[2], label_parameters=hit[1])
@@ -46,12 +123,12 @@ def _translate_label_atoms(program):
     @param str program: the program that is intended to be modified
     @return str:
     """
-    for hit in re.findall("(%!trace_all \{(.*)\} (([a-z][a-zA-Z]*)(\(.*\))?([ ]*:-[ ]*(.*))?.))", program):
-        # 0: original match 1: "label",v1,v2  2: complete rule  3: name  4: arguments  5: separator and body  6: body.
+    for hit in re.findall("(%!trace_all \{(.*)\} ([a-z][a-zA-Z]*(?:\(.*\))?)(?:[ ]*:-[ ]*(.*))?\.)", program):
+        # 0: original match 1: "label",v1,v2  2: head  3: body.
         program = program.replace(
             hit[0],
-            "&label_atoms{{{name}{arguments},{parameters} : }} :- {name}{arguments}{rest_body}.\n".format(
-                name=hit[3], arguments=hit[4], parameters=hit[1], rest_body="," + hit[6] if hit[6] else "")
+            "&label_atoms{{{head},{parameters} : }} :- {head}{rest_body}.\n".format(
+                head=hit[2], parameters=hit[1], rest_body="," + hit[3] if hit[3] else "")
         )
 
     return program
@@ -63,11 +140,11 @@ def _translate_explains(program):
     @param str program:
     @return:
     """
-    for hit in re.findall("(%!show_all (([a-z][a-zA-Z]*(\(.*\))?)([ ]*:-[ ]*(.*))?.))", program):
-        # 0: original match  1: rule  2: head of the rule  3: parameters of the head  4: body with :-  5: body without :-
+    for hit in re.findall("(%!show_all (([a-z][a-zA-Z]*(?:\(.*\)))(?:[ ]*:-[ ]*(.*))?\.))", program):
+        # 0: original match  1: rule  2: head of the rule  3: body of the rule
         program = program.replace(
             hit[0],
-            "{prefix}{head}:-{head}{body}.".format(prefix="explain_", head=hit[2], body="," + hit[5] if hit[5] else "")
+            "{prefix}{head}:-{head}{body}.".format(prefix="explain_", head=hit[2], body="," + hit[3] if hit[3] else "")
         )
 
     return program
@@ -75,24 +152,21 @@ def _translate_explains(program):
 
 def _handle_body_labels(body_asts):
     """
-    Divides the given body (list of clingo.ast) into label theory atoms, normal literals and the rest.
-    @param List[clingo.ast.AST] body_asts:
+    Divides the given body (list of clingo.rule_ast) into label theory atoms, normal literals and the rest.
+    @param List[clingo.rule_ast.AST] body_asts:
     @return (label_body, literals, other): tuple containing the list of label theory atoms, the symbolic atoms and
     the rest (respectively).
     """
     label_body = []
-    literals = []
-    other = []
+    rest = []
 
-    for ast in body_asts:
-        if ast['atom'].type == clingo.ast.ASTType.TheoryAtom:
-            label_body.append(ast)
-        elif ast['atom'].type == clingo.ast.ASTType.SymbolicAtom:
-            literals.append(ast)
+    for b_ast in body_asts:
+        if b_ast['atom'].type == ast.ASTType.TheoryAtom:
+            label_body.append(b_ast)
         else:
-            other.append(ast)
+            rest.append(XClingoAST(b_ast))
 
-    return label_body, literals, other
+    return label_body, rest
 
 
 def _add_to_base(rules_to_add, builder, t_option):
@@ -108,129 +182,85 @@ def _add_to_base(rules_to_add, builder, t_option):
 
     # Adds the generated rules to the base program
     try:
-        clingo.parse_program("#program base." + rules_to_add, lambda new_ast: builder.add(new_ast))
+        parse_program("#program base." + rules_to_add, lambda new_ast: builder.add(new_ast))
     except RuntimeError as error:
         if str(error) == "syntax error":
             print("Translation error:\n\n{0}".format(rules_to_add))
             exit(0)
 
 
-def _translate_to_fired_holds(ast, control, builder, t_option):
+def _translate_to_fired_holds(rule_ast, control, builder, t_option):
     """
-    Generates the label rules (useless for now), the fired rules and the holds rules for the given ast rule and adds
+    Generates the label rules (useless for now), the fired rules and the holds rules for the given rule_ast rule and adds
     them to the 'base' program via the given builder.
 
-    @param clingo.ast.AST ast: the AST from which the rules will be generated
+    @param ast.AST rule_ast: the AST from which the rules will be generated
     @param clingo.ProgramBuilder builder: builder of the clingo control object that will receive the generated rules.
     @param bool t_option:
     @return: None
     """
-    if ast.type == clingo.ast.ASTType.Rule:
+    rule_ast = XClingoAST(rule_ast)
 
-        if (ast['head'].type == clingo.ast.ASTType.TheoryAtom and ast['head']['term']['name'] == "label_atoms")\
-                or (str(ast['head']).startswith("explain_")):
+    if rule_ast.type == ast.ASTType.Rule:
+
+        if rule_ast.is_show_all_rule() or rule_ast.is_trace_all_rule():
             # It is a constraint
-            label_body, literals, other = _handle_body_labels(ast['body'])
-            if ast['body']:
-                translated_rule = "{head} :- {translated_body}.".format(
-                    head=str(ast['head']),
-                    translated_body=",".join([str(add_prefix('holds_', lit)) for lit in literals])
-                )
+            if rule_ast['body']:
+                rule_ast.add_prefix("holds_")
+                translated_rule = str(rule_ast)
             else:
-                translated_rule = str(ast['head']) + "."
+                translated_rule = str(rule_ast['head']) + "."
 
             generated_rules = translated_rule + "\n"
-        elif (ast['head']['atom'].type == clingo.ast.ASTType.BooleanConstant and ast['head']['atom']['value'] == False):
-            # It is a constraint
-            label_body, literals, other = _handle_body_labels(ast['body'])
-
-            if literals:
-                translated_constraint = "{head}:-{body}.".format(
-                    head=str(ast['head']),
-                    body=",".join([str(add_prefix('holds_', lit)) for lit in literals])
-                )
-            else:
-                # TODO: remove this, this case cant be
-                translated_constraints = "{head}.".format(
-                    head=str(ast['head'])
-                )
-            comment = "%" + str(ast)
-            generated_rules = comment + "\n" + translated_constraint
         else:
             rule_counter = control.count_rule()
 
             # Separates the &label literals in the body from the rest
-            label_body, literals, other = _handle_body_labels(ast['body'])
+            label_body, rest_body = _handle_body_labels(rule_ast['body'])
 
-            # Finds out if head is classic negation
-            try:
-                is_classic_negation = (ast['head']['atom']['term'].type == clingo.ast.ASTType.UnaryOperation
-                                   and ast['head']['atom']['term']['operator'] == clingo.ast.UnaryOperator.Minus)
-            except KeyError:
-                is_classic_negation = False
+            head_ast = XClingoAST(rule_ast['head'])
+            head_function = head_ast.get_function()
 
-            if is_classic_negation:
-                head_function = ast['head']['atom']['term']['argument']
-            else:
-                head_function = ast['head']['atom']['term']
-
-
-            # Associates fired number and function name
-            body = []
-            for lit in [literal for literal in literals if literal['sign'] == clingo.ast.Sign.NoSign]:
-                if (lit['atom']['term'].type == clingo.ast.ASTType.UnaryOperation
-                                   and lit['atom']['term']['operator'] == clingo.ast.UnaryOperator.Minus):
-                    b_fun = lit['atom']['term']['argument']
-                else:
-                    b_fun = lit['atom']['term']
-                body.append((b_fun['name'], b_fun['arguments']))
+            name_args_pairs = [ (l.get_function()['name'], l.get_function()['arguments'])
+                     for l in rest_body if l.type == ast.ASTType.Literal and l['atom'].type == ast.ASTType.SymbolicAtom and l['sign'] == ast.Sign.NoSign ]
 
             control.traces[rule_counter] = {
                 'head': (str(head_function['name']), head_function['arguments']),
-                'arguments': list(unique_everseen(map(str, head_function['arguments'] + body_variables(ast['body'])))),
-                'body': body
+                'arguments': list(unique_everseen(map(str, head_function['arguments'] + body_variables(rule_ast['body'])))),
+                'body': name_args_pairs
             }
 
-            if ast['head'].type == clingo.ast.ASTType.TheoryAtom:  # For label rules
-                generated_rules = "%{comment}\n{head} :- {body}.\n".\
-                    format(comment=str(ast),
-                           head=str(ast['head']),
-                           body=",".join([str(add_prefix('holds_', lit)) for lit in literals])
-                           )
+            # Generates fired rule
+            fired_head = "fired_{counter}({arguments})".format(
+                counter=str(rule_counter),
+                arguments=",".join(unique_everseen(map(str, head_function['arguments'] + body_variables(rule_ast['body']))))
+            )
+
+            if rest_body:
+                for a in rest_body:
+                    a.add_prefix('holds_')
+                fired_rule = "{head} :- {body}.".format(
+                    head=fired_head,
+                    body=",".join(map(str, rest_body)))
             else:
-                # Generates fired rule
-                fired_head = "fired_{counter}({arguments})".format(
-                    counter=str(rule_counter),
-                    arguments=",".join(unique_everseen(map(str, head_function['arguments'] + body_variables(ast['body']))))
-                )
-                if literals or other:
-                    fired_rule = "{head} :- {body}.".format(
-                        head=fired_head,
-                        body=",".join([str(add_prefix('holds_', lit)) for lit in literals] + list(map(str, other))))
-                else:
-                    fired_rule = fired_head + "."
+                fired_rule = fired_head + "."
 
-                # Generates holds rule
-                holds_rule = "{operator}holds_{name}({arguments}) :- {body}.".\
-                    format(
-                        operator="-" if is_classic_negation else "",
-                        name=str(head_function['name']),
-                        arguments=",".join(map(str, head_function['arguments'])),
-                        body=fired_head
-                    )
+            # Generates holds rule
+            head_ast.add_prefix('holds_')
+            holds_rule = "{head} :- {body}.".format(head=str(head_ast), body=fired_head)
 
-                # Generates label rules
-                label_rules = ""
-                for label_ast in label_body:
-                    label_rules += "&label_rule{{{fired_id},{label_parameters}}} :- {body}.\n".format(
-                        fired_id=str(rule_counter),
-                        label_parameters=",".join([str(e) for e in label_ast['atom']['elements']]),
-                        body=fired_head)
+            # Generates label rules
+            label_rules = ""
+            for label_ast in label_body:
+                label_rules += "&label_rule{{{fired_id},{label_parameters}}} :- {body}.\n".format(
+                    fired_id=str(rule_counter),
+                    label_parameters=",".join([str(e) for e in label_ast['atom']['elements']]),
+                    body=fired_head)
 
-                # Generates a comment
-                comment = "%" + str(ast)
+            # Generates a comment
+            comment = "%" + str(rule_ast)
 
-                generated_rules = comment + "\n" + fired_rule + "\n" + holds_rule + "\n" + label_rules
+            generated_rules = comment + "\n" + fired_rule + "\n" + holds_rule + "\n" + label_rules
 
         _add_to_base(generated_rules, builder, t_option)
 
@@ -250,12 +280,12 @@ def prepare_xclingo_program(original_program, t_option):
     # Sets theory atom &label and parses/handles input program
     with control.builder() as builder:
         # Adds theories
-        clingo.parse_program("#program base. #theory label_rule {t { }; &label_rule/0: t, any}.",
+        parse_program("#program base. #theory label_rule {t { }; &label_rule/0: t, any}.",
                              lambda ast: builder.add(ast))
-        clingo.parse_program("#program base. #theory label_atoms {t { }; &label_atoms/0: t, any}.",
+        parse_program("#program base. #theory label_atoms {t { }; &label_atoms/0: t, any}.",
                              lambda ast: builder.add(ast))
         # Handle xclingo sentences
-        clingo.parse_program("#program base." + translated_program,
+        parse_program("#program base." + translated_program,
                              lambda ast: _translate_to_fired_holds(ast, control, builder, t_option))
 
     return control
