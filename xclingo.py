@@ -56,7 +56,19 @@ def build_causes(traces, fired_values, labels_dict, auto_labelling):
             # Build the causes using fired values and the original body
             (name, variables) = traces[fired_id]['head']
             head = clingo.Function(name, [var_val[str(v)] for v in variables])
-            fired_body = [clingo.Function(name, [var_val[str(v)] for v in variables]) for (name, variables) in traces[fired_id]['body']]
+
+            # Computes fired_body
+            fired_body = []
+            for (name, variables) in traces[fired_id]['body']:
+                values = []
+                for v in variables:
+                    if str(v) in var_val:
+                        values.append(var_val[str(v)])
+                    elif str(v)[0].islower():
+                        values.append(clingo.Function(str(v),[]))
+                fired_body.append(clingo.Function(name, values))
+
+            #fired_body = [clingo.Function(name, [var_val[str(v)] for v in variables]) for (name, variables) in traces[fired_id]['body']]
 
             # Labels
             labels = labels_dict[str(head)] if str(head) in labels_dict else []
@@ -115,6 +127,7 @@ def build_explanations(atom, causes):
             alt_rule_explanations = [{}]  # Explanations of the current alt_rule.
             # Each atom in 'alt_rule' can have multiple explanations. Each combination is an atom explanation.
             for a in alt_rule['fired_body']:
+                print(str(atom))
                 a_explanations = build_explanations(a, causes)
 
                 if a_explanations != [{}]:  # If a is not fact

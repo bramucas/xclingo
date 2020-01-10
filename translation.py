@@ -138,29 +138,68 @@ def _translate_to_fired_holds(ast, control, builder, t_option):
                 translated_rule = str(ast['head']) + "."
 
             generated_rules = translated_rule + "\n"
+        elif (ast['head']['atom'].type == clingo.ast.ASTType.BooleanConstant and ast['head']['atom']['value'] == False):
+            # It is a constraint
+            label_body, literals, other = _handle_body_labels(ast['body'])
+
+            if literals:
+                translated_constraint = "{head}:-{body}.".format(
+                    head=str(ast['head']),
+                    body=",".join([str(add_prefix('holds_', lit)) for lit in literals])
+                )
+            else:
+                # TODO: remove this, this case cant be
+                translated_constraints = "{head}.".format(
+                    head=str(ast['head'])
+                )
+            comment = "%" + str(ast)
+            generated_rules = comment + "\n" + translated_constraint
         else:
             rule_counter = control.count_rule()
 
             # Separates the &label literals in the body from the rest
             label_body, literals, other = _handle_body_labels(ast['body'])
 
+            # Finds out if head is classic negation
+            try:
+                is_classic_negation = (ast['head']['atom']['term'].type == clingo.ast.ASTType.UnaryOperation
+                                   and ast['head']['atom']['term']['operator'] == clingo.ast.UnaryOperator.Minus)
+            except KeyError:
+                is_classic_negation = False
+
+            if is_classic_negation:
+                head_function = ast['head']['atom']['term']['argument']
+            else:
+                head_function = ast['head']['atom']['term']
+
+
             # Associates fired number and function name
+            body = []
+            for lit in [literal for literal in literals if literal['sign'] == clingo.ast.Sign.NoSign]:
+                if (lit['atom']['term'].type == clingo.ast.ASTType.UnaryOperation
+                                   and lit['atom']['term']['operator'] == clingo.ast.UnaryOperator.Minus):
+                    b_fun = lit['atom']['term']['argument']
+                else:
+                    b_fun = lit['atom']['term']
+                body.append((b_fun['name'], b_fun['arguments']))
+
             control.traces[rule_counter] = {
-                'head': (str(ast['head']['atom']['term']['name']), ast['head']['atom']['term']['arguments']),
-                'arguments': list(unique_everseen(map(str, ast['head']['atom']['term']['arguments'] + body_variables(ast['body'])))),
-                'body': [(lit['atom']['term']['name'], lit['atom']['term']['arguments']) for lit in literals if lit['sign'] == clingo.ast.Sign.NoSign]
+                'head': (str(head_function['name']), head_function['arguments']),
+                'arguments': list(unique_everseen(map(str, head_function['arguments'] + body_variables(ast['body'])))),
+                'body': body
             }
 
             if ast['head'].type == clingo.ast.ASTType.TheoryAtom:  # For label rules
                 generated_rules = "%{comment}\n{head} :- {body}.\n".\
                     format(comment=str(ast),
                            head=str(ast['head']),
-                           body=",".join([str(add_prefix('holds_', lit)) for lit in literals]))
+                           body=",".join([str(add_prefix('holds_', lit)) for lit in literals])
+                           )
             else:
                 # Generates fired rule
                 fired_head = "fired_{counter}({arguments})".format(
                     counter=str(rule_counter),
-                    arguments=",".join(unique_everseen(map(str, ast['head']['atom']['term']['arguments'] + body_variables(ast['body']))))
+                    arguments=",".join(unique_everseen(map(str, head_function['arguments'] + body_variables(ast['body']))))
                 )
                 if literals or other:
                     fired_rule = "{head} :- {body}.".format(
@@ -170,10 +209,13 @@ def _translate_to_fired_holds(ast, control, builder, t_option):
                     fired_rule = fired_head + "."
 
                 # Generates holds rule
-                holds_rule = "holds_{name}({arguments}) :- {body}.".\
-                    format(name=str(ast['head']['atom']['term']['name']),
-                           arguments=",".join(map(str, ast['head']['atom']['term']['arguments'])),
-                           body=fired_head)
+                holds_rule = "{operator}holds_{name}({arguments}) :- {body}.".\
+                    format(
+                        operator="-" if is_classic_negation else "",
+                        name=str(head_function['name']),
+                        arguments=",".join(map(str, head_function['arguments'])),
+                        body=fired_head
+                    )
 
                 # Generates label rules
                 label_rules = ""
