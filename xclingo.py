@@ -111,11 +111,12 @@ def build_labels_dict(c_control):
     return labels_dict
 
 
-def build_explanations(atom, causes):
+def _build_explanations(atom, causes, stack):
     """
     Returns a list containing all the possibles explanations for the given atom based on the given 'causes' dict.
     @param clingo.Symbol atom: the atom to be explained.
     @param Dict causes: dict containing all the possible causes for each atom in a model.
+    @param List stack: the stack of calls to _build_explanations done so far at this point.
     @return List[Dict]: list of dictionaries in where each dict is an explanation for the atom.
     """
     explanations = []
@@ -124,13 +125,22 @@ def build_explanations(atom, causes):
     for index, alt_rule in causes[causes.fired_head == atom][['labels', 'fired_body']].iterrows():
 
         if alt_rule['fired_body']:
-            alt_rule_explanations = [{}]  # Explanations of the current alt_rule.
+            alt_rule_explanations = []  # Explanations of the current alt_rule.
             # Each atom in 'alt_rule' can have multiple explanations. Each combination is an atom explanation.
             for a in alt_rule['fired_body']:
-                print(str(atom))
-                a_explanations = build_explanations(a, causes)
+                # This prevents the function to fall in an infinite loop of calls
+                if a in stack:
+                    continue
+                else:
+                    stack.append(a)
+
+                a_explanations = _build_explanations(a, causes, stack)
 
                 if a_explanations != [{}]:  # If a is not fact
+                    # Initialize with empty explanation if there is nothing yet
+                    if not alt_rule_explanations:
+                        alt_rule_explanations.append({})
+
                     for i in range(len(alt_rule_explanations)):
                         # The atom explanations (e) are merged directly with the rest of the current alt_rule.
                         a_expl = alt_rule_explanations.pop()
@@ -151,6 +161,10 @@ def build_explanations(atom, causes):
             explanations.extend(alt_rule_explanations)
 
     return list(unique_everseen(explanations))
+
+
+def build_explanations(atom, causes):
+    return _build_explanations(atom, causes, [atom])
 
 
 def _ascii_tree_explanation(explanation, level):
@@ -228,8 +242,10 @@ def main():
                 atoms_to_explain = causes['fired_head']
 
             for a in atoms_to_explain:
-                print(">> {}\n".format(a))
-                for e in build_explanations(a, causes):
+                print(">> {}".format(a), end='')
+                a_explanations = build_explanations(a, causes)
+                print("\t[{} explanations]".format(len(a_explanations)))
+                for e in a_explanations:
                     print(ascii_tree_explanation(e))
 
             print()
