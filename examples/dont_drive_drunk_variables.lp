@@ -19,11 +19,6 @@ sentence(P, prison) :-  punish(P).
 %!trace {"% is innocent.",P}
 sentence(P, innocent) :-person(P), not sentence(P, prison).
 
-%!show_all sentence(P, X).
-
-%!trace_all {"% was driving",P} drive(P).
-%!trace_all {"% was drunk",P} alcohol(P,A) :- A>30.
-%!trace_all {"% has resisted to authority",P} resist(P).
 
 
 %%% TODO:
