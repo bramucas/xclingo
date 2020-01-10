@@ -30,7 +30,7 @@ def _translate_label_rules(program):
     @param str program: the program that is intended to be modified.
     @return str:
     """
-    for hit in re.findall("(%!label_rule \{(.*)\}[ ]*\n[ ]*([a-z][a-zA-Z]*(\(.*\))?[ ]*:-[ ]*.*).)", program):
+    for hit in re.findall("(%!trace \{(.*)\}[ ]*\n[ ]*([a-z][a-zA-Z]*(\(.*\))?[ ]*:-[ ]*.*).)", program):
         # 0: original match  1: label_parameters  2: complete original rule  3: parameters of the head (useless)
         program = program.replace(
             hit[0],
@@ -46,7 +46,7 @@ def _translate_label_atoms(program):
     @param str program: the program that is intended to be modified
     @return str:
     """
-    for hit in re.findall("(%!label_atoms \{(.*)\} (([a-z][a-zA-Z]*)(\(.*\))?([ ]*:-[ ]*(.*))?.))", program):
+    for hit in re.findall("(%!trace_all \{(.*)\} (([a-z][a-zA-Z]*)(\(.*\))?([ ]*:-[ ]*(.*))?.))", program):
         # 0: original match 1: "label",v1,v2  2: complete rule  3: name  4: arguments  5: separator and body  6: body.
         program = program.replace(
             hit[0],
@@ -63,7 +63,7 @@ def _translate_explains(program):
     @param str program:
     @return:
     """
-    for hit in re.findall("(%!explain (([a-z][a-zA-Z]*(\(.*\))?)([ ]*:-[ ]*(.*))?.))", program):
+    for hit in re.findall("(%!show_all (([a-z][a-zA-Z]*(\(.*\))?)([ ]*:-[ ]*(.*))?.))", program):
         # 0: original match  1: rule  2: head of the rule  3: parameters of the head  4: body with :-  5: body without :-
         program = program.replace(
             hit[0],
@@ -129,10 +129,12 @@ def _translate_to_fired_holds(ast, control, builder, t_option):
 
         if (ast['head'].type == clingo.ast.ASTType.TheoryAtom and ast['head']['term']['name'] == "label_atoms")\
                 or (str(ast['head']).startswith("explain_")):
+            # It is a constraint
+            label_body, literals, other = _handle_body_labels(ast['body'])
             if ast['body']:
                 translated_rule = "{head} :- {translated_body}.".format(
                     head=str(ast['head']),
-                    translated_body=",".join([str(add_prefix('holds_', lit)) for lit in ast['body']])
+                    translated_body=",".join([str(add_prefix('holds_', lit)) for lit in literals])
                 )
             else:
                 translated_rule = str(ast['head']) + "."
