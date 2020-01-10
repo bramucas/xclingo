@@ -36,7 +36,14 @@ def body_variables(body_asts):
 
     for ast in body_asts:
         if ast['atom'].type == clingo.ast.ASTType.SymbolicAtom:
-            for a in ast['atom']['term']['arguments']:
+
+            if (ast['atom']['term'].type == clingo.ast.ASTType.UnaryOperation
+                    and ast['atom']['term']['operator'] == clingo.ast.UnaryOperator.Minus):
+                arguments = ast['atom']['term']['argument']['arguments']
+            else:
+                arguments = ast['atom']['term']['arguments']
+
+            for a in arguments:
                 if a.type == clingo.ast.ASTType.Variable:
                     vars.append(a)
         elif ast['atom'].type == clingo.ast.ASTType.Comparison:
@@ -56,8 +63,10 @@ def add_prefix(prefix, literal):
     @param clingo.ast.AST literal: (should be type==clingo.ASTTYPE.Literal)
     @return string: the string of the modified literal.
     """
-
-    if literal.type == clingo.ast.ASTType.Literal and literal['atom'].type == clingo.ast.ASTType.SymbolicAtom:
+    if (literal['atom']['term'].type == clingo.ast.ASTType.UnaryOperation
+                                   and literal['atom']['term']['operator'] == clingo.ast.UnaryOperator.Minus):
+        literal['atom']['term']['argument']['name'] = prefix + literal['atom']['term']['argument']['name']
+    elif literal.type == clingo.ast.ASTType.Literal and literal['atom'].type == clingo.ast.ASTType.SymbolicAtom:
         literal['atom']['term']['name'] = prefix + literal['atom']['term']['name']
 
     return literal
