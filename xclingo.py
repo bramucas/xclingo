@@ -207,12 +207,15 @@ def main():
                         help="If enabled, the program will just show the translation of the input program")
     parser.add_argument('--auto-labelling', type=str, choices=["none", "facts", "all"], default="none",
                         help="Automatically creates labels for the rules of the program. Default: none.")
-    parser.add_argument('infile', nargs='?', type=argparse.FileType('r'), default=sys.stdin, help="ASP program")
+    parser.add_argument('infile', nargs='+', type=argparse.FileType('r'), default=sys.stdin, help="ASP program")
     args = parser.parse_args()
 
-    original_program = args.infile.read()
+    # Reads input files
+    original_program = ""
+    for file in args.infile:
+        original_program += file.read()
 
-    # Prepare the original program and obtain XClingoControl
+    # Prepares the original program and obtain an XClingoControl
     control = translation.prepare_xclingo_program(original_program, args.t)
 
     # JUST FOR DEBUGGING TODO: delete this
@@ -221,6 +224,7 @@ def main():
 
     control.ground([("base", [])])
 
+    # Constructs labels
     labels_dict = build_labels_dict(control)
 
     # Solves and prints explanations
