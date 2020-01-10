@@ -13,18 +13,17 @@ alcohol(clare, 0).
 punish(P) :- drive(P), alcohol(P,A), A>30.
 punish(P) :- resist(P).
 
-%!label_rule {"% has been sentenced to %",P,prison}
+%!trace {"% has been sentenced to prison.",P}
 sentence(P, prison) :-  punish(P).
 
-%!label_rule {"% is innocent.",P}
+%!trace {"% is innocent.",P}
 sentence(P, innocent) :-person(P), not sentence(P, prison).
 
-% !explain sentence(P, X).
-% !explain alcohol(P,A) :- A>30.
+%!show_all sentence(P, X).
 
-% !label_atoms {"% was driving",P} drive(P).
-% !label_atoms {"% was drunk",P} alcohol(P,A) :- A>30.
-% !label_atoms {"% has resisted to authority",P} resist(P).
+%!trace_all {"% was driving",P} drive(P).
+%!trace_all {"% was drunk",P} alcohol(P,A) :- A>30.
+%!trace_all {"% has resisted to authority",P} resist(P).
 
 
 %%% TODO:
@@ -32,3 +31,9 @@ sentence(P, innocent) :-person(P), not sentence(P, prison).
 %!weak
 %:- constraint_body.
 
+
+%  %!trace
+%  %!show_all
+%  %!trace_all
+%
+%
