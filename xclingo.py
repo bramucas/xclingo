@@ -211,6 +211,7 @@ def main():
                         help="If enabled, the program will just show the translation of the input program")
     parser.add_argument('--auto-labelling', type=str, choices=["none", "facts", "all"], default="none",
                         help="Automatically creates labels for the rules of the program. Default: none.")
+    #parser.add_argument('n_sol', nargs='?', type=int, default=0, help="Number of solutions")
     parser.add_argument('infile', nargs='+', type=argparse.FileType('r'), default=sys.stdin, help="ASP program")
     args = parser.parse_args()
 
@@ -220,7 +221,7 @@ def main():
         original_program += file.read()
 
     # Prepares the original program and obtain an XClingoControl
-    control = translation.prepare_xclingo_program(original_program, args.t)
+    control = translation.prepare_xclingo_program(['-n 0'], original_program, args.t)
 
     # JUST FOR DEBUGGING TODO: delete this
     if args.t:
@@ -237,9 +238,6 @@ def main():
         for m in it:
             sol_n += 1
             print("Answer: " + str(sol_n))
-
-            # The show all sentences that have been fired for the current model
-            fired_show_all = [remove_prefix("show_all_", a) for a in find_and_remove_by_prefix(m, 'show_all_')]
 
             # Causes data frame for the current model
             causes = build_causes(control.traces, build_fired_dict(m), labels_dict, args.auto_labelling)

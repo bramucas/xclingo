@@ -103,6 +103,8 @@ class XClingoAST(ast.AST):
         if self.type in (ast.ASTType.Comparison, ast.ASTType.BooleanConstant):
             return None
 
+        print(self)
+        print(self.type)
         raise RuntimeError(str(self.type) + "  do not have Function.")
 
 
@@ -112,7 +114,7 @@ def _translate_label_rules(program):
     @param str program: the program that is intended to be modified.
     @return str:
     """
-    for hit in re.findall("(%!trace \{(.*)\}[ ]*\n[ ]*([a-z][a-zA-Z]*(?:\(.*\))?[ ]*:-[ ]*.*).)", program):
+    for hit in re.findall("(%!trace \{(.*)\}[ ]*\n[ ]*(\-?[a-z][a-zA-Z]*(?:\(.*\))?[ ]*:-[ ]*.*).)", program):
         # 0: original match  1: label_parameters  2: complete original rule
         program = program.replace(
             hit[0],
@@ -128,7 +130,7 @@ def _translate_label_atoms(program):
     @param str program: the program that is intended to be modified
     @return str:
     """
-    for hit in re.findall("(%!trace_all \{(.*)\} ([a-z][a-zA-Z]*(?:\(.*\))?)(?:[ ]*:-[ ]*(.*))?\.)", program):
+    for hit in re.findall("(%!trace_all \{(.*)\} (\-?[a-z][a-zA-Z]*(?:\([^\.(?:\:\-)]*\))?)(?:[ ]*:-[ ]*(.*))?\.)", program):
         # 0: original match 1: "label",v1,v2  2: head  3: body.
         program = program.replace(
             hit[0],
@@ -145,7 +147,7 @@ def _translate_explains(program):
     @param str program:
     @return:
     """
-    for hit in re.findall("(%!show_all (([a-z][a-zA-Z]*(?:\(.*\)))(?:[ ]*:-[ ]*(.*))?\.))", program):
+    for hit in re.findall("(%!show_all ((\-?[a-z][a-zA-Z]*(?:\(.*\)))(?:[ ]*:-[ ]*(.*))?\.))", program):
         # 0: original match  1: rule  2: head of the rule  3: body of the rule
         program = program.replace(
             hit[0],
@@ -263,7 +265,7 @@ def _translate_to_fired_holds(rule_ast, control, builder, t_option):
             # Generates label rules
             label_rules = ""
             for label_ast in label_body:
-                label_rules += "&label_rule{{{fired_id},{label_parameters}}} :- {body}.\n".format(
+                label_rules += "&trace{{{fired_id},{label_parameters}}} :- {body}.\n".format(
                     fired_id=str(rule_counter),
                     label_parameters=",".join([str(e) for e in label_ast['atom']['elements']]),
                     body=fired_head)
@@ -276,8 +278,8 @@ def _translate_to_fired_holds(rule_ast, control, builder, t_option):
         _add_to_base(generated_rules, builder, t_option)
 
 
-def prepare_xclingo_program(original_program, t_option):
-    control = XClingoProgramControl(["-n 0", "--keep-facts"])
+def prepare_xclingo_program(clingo_arguments, original_program, t_option):
+    control = XClingoProgramControl(clingo_arguments)
 
     # Pre-processing original program
     translated_program = _translate_label_rules(original_program)
@@ -291,9 +293,9 @@ def prepare_xclingo_program(original_program, t_option):
     # Sets theory atom &label and parses/handles input program
     with control.builder() as builder:
         # Adds theories
-        parse_program("#program base. #theory trace {t { }; &trace/0: t, any}.",
+        parse_program("#program base. #theory trace {t { - : 7, unary; + : 6, binary, left }; &trace/0: t, any}.",
                       lambda ast_object: builder.add(ast_object))
-        parse_program("#program base. #theory trace_all {t { }; &trace_all/0: t, any}.",
+        parse_program("#program base. #theory trace_all {t { - : 7, unary; + : 6, binary, left }; &trace_all/0: t, any}.",
                       lambda ast_object: builder.add(ast_object))
         # Handle xclingo sentences
         parse_program("#program base." + translated_program,
