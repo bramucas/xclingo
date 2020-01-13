@@ -27,16 +27,16 @@ class XClingoProgramControl(Control):
 class XClingoAST(ast.AST):
 
     def __init__(self, base_ast):
-        super().__init__(base_ast.type, **dict(base_ast.items()))
-        # Also convert children that are AST
-        for k, a in self.items():
-            if type(a) == ast.AST:
-                self[k] = XClingoAST(self[k])
-            elif type(a) == list:  # Only the elements that are AST
+        super().__init__(base_ast.type)
+        # Convert children that are AST
+        for k in base_ast:
+            if type(base_ast[k]) == ast.AST:
+                self[k] = XClingoAST(base_ast[k])
+            elif type(base_ast[k]) == list:  # Only the elements that are AST
                 self[k] = [XClingoAST(item) if type(item) == ast.AST else item
-                           for item in self[k]]
+                           for item in base_ast[k]]
             else:  # If is not AST or list(AST) then do nothing
-                continue
+                self[k] = base_ast[k]
 
     def is_constraint(self):
         """
