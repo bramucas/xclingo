@@ -29,8 +29,8 @@ def find_and_remove_by_prefix(model, prefix):
 
 def body_variables(body_asts):
     """
-    @param List[clingo.ast.AST] body_asts:
-    @return List[clingo.ast.AST]: list containing the ASTs of the variables used in the body.
+    @param List[clingo.rule_ast.AST] body_asts:
+    @return List[clingo.rule_ast.AST]: list containing the ASTs of the variables used in the body.
     """
     vars = []
 
@@ -55,28 +55,11 @@ def body_variables(body_asts):
     return vars
 
 
-def add_prefix(prefix, literal):
-    """
-    @todo: as in 'remove_prefix' this function should be able to handle different types (asts, clingo.Symbols, etc.)
-
-    @param string prefix:
-    @param clingo.ast.AST literal: (should be type==clingo.ASTTYPE.Literal)
-    @return string: the string of the modified literal.
-    """
-    if (literal['atom']['term'].type == clingo.ast.ASTType.UnaryOperation
-                                   and literal['atom']['term']['operator'] == clingo.ast.UnaryOperator.Minus):
-        literal['atom']['term']['argument']['name'] = prefix + literal['atom']['term']['argument']['name']
-    elif literal.type == clingo.ast.ASTType.Literal and literal['atom'].type == clingo.ast.ASTType.SymbolicAtom:
-        literal['atom']['term']['name'] = prefix + literal['atom']['term']['name']
-
-    return literal
-
-
 def remove_prefix(prefix, ast):
     """
     @param string prefix:
-    @param clingo.ast ast: (should be a clingo.Symbol or a clingo.ast with type Literal or SymbolicAtom.
-    @return: the ast (whatever type it has) without the given prefix.
+    @param clingo.ast ast: (should be a clingo.Symbol or a clingo.rule_ast with type Literal or SymbolicAtom.
+    @return: the rule_ast (whatever type it has) without the given prefix.
     """
     if type(ast) == clingo.Symbol:
         ast = clingo.Function(ast.name.replace(prefix, ""), ast.arguments, ast.positive)
