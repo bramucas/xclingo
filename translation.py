@@ -10,7 +10,7 @@ class XClingoProgramControl(Control):
     """
     _rule_counter = None
     traces = None
-    havesat_explain = None
+    have_explain = None
 
     def __init__(self, *args):
         self.rule_counter = 0
@@ -26,79 +26,84 @@ class XClingoProgramControl(Control):
 
 class XClingoAST(ast.AST):
 
-    def __init__(self, ast):
-        super().__init__(ast.type, **dict(ast.items()))
+    def __init__(self, base_ast):
+        super().__init__(base_ast.type, **dict(base_ast.items()))
+        # Also convert childs that are AST
+        for k, a in self.items():
+            if type(a) == ast.AST:
+                self[k] = XClingoAST(self[k])
+            elif type(a) == list:  # Only the elements that are AST
+                self[k] = [XClingoAST(item) if type(item) == ast.AST else item
+                           for item in self[k]]
+            else:  # If is not AST or list(AST) then do nothing
+                continue
 
-    def is_trace_all_rule(self):
+    def is_constraint(self):
+        """
+        @return bool: True if the rule is a constraint, False if not.
+        """
         return self['head']['atom'].type == ast.ASTType.BooleanConstant and self['head']['atom']['value'] == False
 
+    def is_trace_all_rule(self):
+        """
+        @return bool: True if the rule is an instance of a xclingo trace_all rule, False if not.
+        """
+        return self['head'].type == ast.ASTType.TheoryAtom and self['head']['term']['name'] == "label_atoms"
+
     def is_show_all_rule(self):
-        return (self['head'].type == ast.ASTType.TheoryAtom and self['head']['term']['name'] == "label_atoms") \
-            or (str(self['head']).startswith("explain_"))
+        """
+        @return bool: True if the rule is an instance of a xclingo show_all rule, False if not.
+        """
+        return str(self['head']).startswith("explain_")
 
     def add_prefix(self, prefix):
         """
         It will try to add a prefix to this AST. It can raise an exception if the action has no sense (this depends on
-        the type of the AST. Also, the result of executing this method is different depending on the type.
-        @todo: change this function to use get_function() instead making so many comprobations
+        the type of the AST). If the ast is Rule type, then the prefix will be added only to the atoms in the body if it
+        has a body, or only to the atom in the head in the other case.
 
         @param str prefix: the prefix that is intended to be added to the AST.
         @return None:
         """
-
-
-
-        # Handle classic negation
-        if self.type == ast.ASTType.UnaryOperation and self['atom']['term']['operator'] == ast.UnaryOperator.Minus:
-            self['atom']['term']['argument']['name'] = prefix + self['atom']['term']['argument']['name']
-            return
-        # Literals (but just symbolic atoms)
-        elif self.type == ast.ASTType.Literal:
-            atom = XClingoAST(self['atom'])
-            atom.add_prefix(prefix)
-            self['atom'] = atom
-            return
-        elif self.type == ast.ASTType.SymbolicAtom and self['term'].type == ast.ASTType.Function:
-            self['term']['name'] = prefix + self['term']['name']
-        # Rules
-        elif self.type == ast.ASTType.Rule:
+        # Rules special case
+        if self.type == ast.ASTType.Rule:
             # Rules with body
             if self['body']:
                 # Adds the prefix to all the asts in the body but not to the head
-                new_body = []
                 for b_ast in self['body']:
-                    xb_ast = XClingoAST(b_ast)
-                    xb_ast.add_prefix(prefix)
-                    new_body.append(xb_ast)
-                self['body'] = new_body
+                    b_ast.add_prefix(prefix)
                 return
             # Facts (rules without body)
             else:
                 # Adds the prefix to the ast of the head
-                x_ast = XClingoAST(self['head'])
-                x_ast.add_prefix(prefix)
-                self['head'] = x_ast
-        # It has no sense to add a prefix to this AST
+                self['head'].add_prefix(prefix)
         else:
-            return
+            fun = self.get_function()
+            if fun:
+                fun['name'] = prefix + fun['name']
 
     def get_function(self):
+        """
+        If the AST has a unique function inside of it (some types as Comparison can have multiple functions) then it
+        will return it.
+        @return XClingoAST: the function inside of the ast.
+        """
         if self.type in (ast.ASTType.Function, ast.ASTType.TheoryFunction):
             return self
 
         if self.type == ast.ASTType.SymbolicAtom:
-            return XClingoAST(self['term']).get_function()
+            return self['term'].get_function()
 
         if self.type == ast.ASTType.UnaryOperation:
-            return XClingoAST(self['argument']).get_function()
+            return self['argument'].get_function()
 
         if self.type == ast.ASTType.Literal:
             return XClingoAST(self['atom']).get_function()
 
-        if self.type in (ast.ASTType.Comparison, ast.ASTType.BooleanConstant, ast.ASTType.Comparison):
-            return
+        if self.type in (ast.ASTType.Comparison, ast.ASTType.BooleanConstant):
+            return None
 
-        raise RuntimeError()
+        raise RuntimeError(str(self.type) + "  do not have Function.")
 
 
 def _translate_label_rules(program):
@@ -150,7 +155,7 @@ def _translate_explains(program):
     return program
 
 
-def _handle_body_labels(body_asts):
+def _separate_labels_from_body(body_asts):
     """
     Divides the given body (list of clingo.rule_ast) into label theory atoms, normal literals and the rest.
     @param List[clingo.rule_ast.AST] body_asts:
@@ -191,20 +196,23 @@ def _add_to_base(rules_to_add, builder, t_option):
 
 def _translate_to_fired_holds(rule_ast, control, builder, t_option):
     """
-    Generates the label rules (useless for now), the fired rules and the holds rules for the given rule_ast rule and adds
-    them to the 'base' program via the given builder.
+    Translate the different possible xclingo rules their clingo version making use of 'fired_' and 'holds_' prefixes,
+    then it adds them to the base program using the given builder object.
+    Also it keep trace (inside the given control object) of the rule information that is necessary for computing the
+    causes after the solving phase.
 
     @param ast.AST rule_ast: the AST from which the rules will be generated
     @param clingo.ProgramBuilder builder: builder of the clingo control object that will receive the generated rules.
-    @param bool t_option:
+    @param bool t_option: if enabled, the function will print the translated sentences but they will not be added to the
+    builder.
     @return: None
     """
     rule_ast = XClingoAST(rule_ast)
 
     if rule_ast.type == ast.ASTType.Rule:
 
-        if rule_ast.is_show_all_rule() or rule_ast.is_trace_all_rule():
-            # It is a constraint
+        # show_all rules, trace_all rules and constraints rules.
+        if rule_ast.is_show_all_rule() or rule_ast.is_trace_all_rule() or rule_ast.is_constraint():
             if rule_ast['body']:
                 rule_ast.add_prefix("holds_")
                 translated_rule = str(rule_ast)
@@ -212,42 +220,45 @@ def _translate_to_fired_holds(rule_ast, control, builder, t_option):
                 translated_rule = str(rule_ast['head']) + "."
 
             generated_rules = translated_rule + "\n"
-        else:
+        else:  # Other cases
             rule_counter = control.count_rule()
 
             # Separates the &label literals in the body from the rest
-            label_body, rest_body = _handle_body_labels(rule_ast['body'])
+            label_body, rest_body = _separate_labels_from_body(rule_ast['body'])
+            # Binds the function in the head to a variable to simplify following code
+            head_function = rule_ast['head'].get_function()
 
-            head_ast = XClingoAST(rule_ast['head'])
-            head_function = head_ast.get_function()
-
-            name_args_pairs = [ (l.get_function()['name'], l.get_function()['arguments'])
-                     for l in rest_body if l.type == ast.ASTType.Literal and l['atom'].type == ast.ASTType.SymbolicAtom and l['sign'] == ast.Sign.NoSign ]
-
+            # Keep trace of head, arguments and body of the rules using rule_counter
             control.traces[rule_counter] = {
                 'head': (str(head_function['name']), head_function['arguments']),
-                'arguments': list(unique_everseen(map(str, head_function['arguments'] + body_variables(rule_ast['body'])))),
-                'body': name_args_pairs
+                'arguments': list(
+                    unique_everseen(map(str, head_function['arguments'] + body_variables(rule_ast['body'])))),
+                # 'body' contains pairs of function names and arguments found in the body
+                'body': [(lit.get_function()['name'], lit.get_function()['arguments'])
+                               for lit in rest_body if
+                               lit.type == ast.ASTType.Literal and lit['atom'].type == ast.ASTType.SymbolicAtom and lit[
+                                   'sign'] == ast.Sign.NoSign]
             }
 
             # Generates fired rule
             fired_head = "fired_{counter}({arguments})".format(
                 counter=str(rule_counter),
-                arguments=",".join(unique_everseen(map(str, head_function['arguments'] + body_variables(rule_ast['body']))))
+                arguments=",".join(
+                    unique_everseen(map(str, head_function['arguments'] + body_variables(rule_ast['body']))))
             )
 
             if rest_body:
                 for a in rest_body:
                     a.add_prefix('holds_')
-                fired_rule = "{head} :- {body}.".format(
-                    head=fired_head,
+                fired_rule = "{fired_head} :- {body}.".format(
+                    fired_head=fired_head,
                     body=",".join(map(str, rest_body)))
             else:
                 fired_rule = fired_head + "."
 
             # Generates holds rule
-            head_ast.add_prefix('holds_')
-            holds_rule = "{head} :- {body}.".format(head=str(head_ast), body=fired_head)
+            rule_ast['head'].add_prefix('holds_')
+            holds_rule = "{head} :- {body}.".format(head=str(rule_ast['head']), body=fired_head)
 
             # Generates label rules
             label_rules = ""
@@ -281,11 +292,11 @@ def prepare_xclingo_program(original_program, t_option):
     with control.builder() as builder:
         # Adds theories
         parse_program("#program base. #theory label_rule {t { }; &label_rule/0: t, any}.",
-                             lambda ast: builder.add(ast))
+                      lambda ast: builder.add(ast))
         parse_program("#program base. #theory label_atoms {t { }; &label_atoms/0: t, any}.",
-                             lambda ast: builder.add(ast))
+                      lambda ast: builder.add(ast))
         # Handle xclingo sentences
         parse_program("#program base." + translated_program,
-                             lambda ast: _translate_to_fired_holds(ast, control, builder, t_option))
+                      lambda ast: _translate_to_fired_holds(ast, control, builder, t_option))
 
     return control
