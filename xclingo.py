@@ -68,12 +68,10 @@ def build_causes(traces, fired_values, labels_dict, auto_labelling):
                         values.append(clingo.Function(str(v),[]))
                 fired_body.append(clingo.Function(name, values))
 
-            #fired_body = [clingo.Function(name, [var_val[str(v)] for v in variables]) for (name, variables) in traces[fired_id]['body']]
-
             # Labels
-            labels = labels_dict[str(head)] if str(head) in labels_dict else []
-            labels.extend(labels_dict[int(fired_id)] if int(fired_id) in labels_dict else [])
-            if auto_labelling == "all" or (auto_labelling == "facts" and fired_body == []):
+            labels = labels_dict[str(head)] if str(head) in labels_dict else []  # Label from 'trace_all' sentences
+            labels.extend(labels_dict[int(fired_id)] if int(fired_id) in labels_dict else [])  # 'Labels trace' sentences
+            if auto_labelling == "all" or (auto_labelling == "facts" and fired_body == []):  # Auto-labelling labels
                 labels.append(str(head))
 
             causes.append(
@@ -88,25 +86,31 @@ def build_causes(traces, fired_values, labels_dict, auto_labelling):
 
 
 def build_labels_dict(c_control):
-    # Extracts &label atoms and process labels
+    """
+    Constructs a dictionary with the processed labels for the program indexed by fired_id or the str version of an atom.
+    Must be called after grounding.
+    @param c_control: clingo.Control object containing the theory atoms after grounding.
+    @return dict:
+    """
     labels_dict = {}
     for atom in c_control.theory_atoms:
-        if atom.term.name in ["label_atoms", "label_rule"] and len(atom.term.arguments) == 0:  # '&label_atoms' atoms with 0 arguments
-            # Replace % placeholders by the values.
-            for e in atom.elements:
-                label = str(e.terms[1])
-                for t in e.terms[2:]:
-                    label = label.replace("%", str(t), 1)
+        name = atom.term.name
+        if name in ["trace_all", "trace"]:
+            terms = atom.elements[0].terms
+            # Replace label % placeholders by the values.
+            label = str(terms[1])
+            for value in terms[2:]:
+                label = label.replace("%", str(value), 1)
 
-                if atom.term.name == "label_atoms":
-                    to_be_labelled = str(e.terms[0])
-                elif atom.term.name == "label_rule":
-                    to_be_labelled = int(str(e.terms[0]))
+            if name == "trace_all":
+                index = str(terms[0])
+            elif name == "trace":
+                index = int(str(terms[0]))
 
-                if to_be_labelled in labels_dict:
-                    labels_dict[to_be_labelled].append(label)
-                else:
-                    labels_dict[to_be_labelled] = [label]
+            if index in labels_dict:
+                labels_dict[index].append(label)
+            else:
+                labels_dict[index] = [label]
 
     return labels_dict
 
@@ -234,15 +238,20 @@ def main():
             sol_n += 1
             print("Answer: " + str(sol_n))
 
-            fired_explains = [remove_prefix("explain_", a) for a in find_and_remove_by_prefix(m, 'explain_')]
+            # The show all sentences that have been fired for the current model
+            fired_show_all = [remove_prefix("show_all_", a) for a in find_and_remove_by_prefix(m, 'show_all_')]
+
+            # Causes data frame for the current model
             causes = build_causes(control.traces, build_fired_dict(m), labels_dict, args.auto_labelling)
 
-            if control.have_explain and fired_explains:
-                atoms_to_explain = [a for a in causes['fired_head'].unique() if a in fired_explains]
-            elif control.have_explain and not fired_explains:
-                print("Any explain rule was activated.")
+            # atoms_to_explain stores the atom that have to be explained for the current model.
+            fired_show_all = [remove_prefix("show_all_", a) for a in find_and_remove_by_prefix(m, 'show_all_')]
+            if control.have_explain and fired_show_all:
+                atoms_to_explain = [a for a in causes['fired_head'].unique() if a in fired_show_all]
+            elif control.have_explain and not fired_show_all:
+                print("Any show_all rule was activated.")
                 atoms_to_explain = []
-            else:
+            else:   # If there is not show_all rules then explain everything in the model.
                 atoms_to_explain = causes['fired_head']
 
             for a in atoms_to_explain:

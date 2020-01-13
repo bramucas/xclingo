@@ -28,7 +28,7 @@ class XClingoAST(ast.AST):
 
     def __init__(self, base_ast):
         super().__init__(base_ast.type, **dict(base_ast.items()))
-        # Also convert childs that are AST
+        # Also convert children that are AST
         for k, a in self.items():
             if type(a) == ast.AST:
                 self[k] = XClingoAST(self[k])
@@ -48,13 +48,13 @@ class XClingoAST(ast.AST):
         """
         @return bool: True if the rule is an instance of a xclingo trace_all rule, False if not.
         """
-        return self['head'].type == ast.ASTType.TheoryAtom and self['head']['term']['name'] == "label_atoms"
+        return self['head'].type == ast.ASTType.TheoryAtom and self['head']['term']['name'] == "trace_all"
 
     def is_show_all_rule(self):
         """
         @return bool: True if the rule is an instance of a xclingo show_all rule, False if not.
         """
-        return str(self['head']).startswith("explain_")
+        return str(self['head']).startswith("show_all_")
 
     def add_prefix(self, prefix):
         """
@@ -116,7 +116,7 @@ def _translate_label_rules(program):
         # 0: original match  1: label_parameters  2: complete original rule
         program = program.replace(
             hit[0],
-            "{rule}, &label_rule{{{label_parameters}}}.\n".format(rule=hit[2], label_parameters=hit[1])
+            "{rule}, &trace{{{label_parameters}}}.\n".format(rule=hit[2], label_parameters=hit[1])
         )
 
     return program
@@ -132,7 +132,7 @@ def _translate_label_atoms(program):
         # 0: original match 1: "label",v1,v2  2: head  3: body.
         program = program.replace(
             hit[0],
-            "&label_atoms{{{head},{parameters} : }} :- {head}{rest_body}.\n".format(
+            "&trace_all{{{head},{parameters} : }} :- {head}{rest_body}.\n".format(
                 head=hit[2], parameters=hit[1], rest_body="," + hit[3] if hit[3] else "")
         )
 
@@ -149,7 +149,7 @@ def _translate_explains(program):
         # 0: original match  1: rule  2: head of the rule  3: body of the rule
         program = program.replace(
             hit[0],
-            "{prefix}{head}:-{head}{body}.".format(prefix="explain_", head=hit[2], body="," + hit[3] if hit[3] else "")
+            "{prefix}{head}:-{head}{body}.".format(prefix="show_all_", head=hit[2], body="," + hit[3] if hit[3] else "")
         )
 
     return program
@@ -235,9 +235,9 @@ def _translate_to_fired_holds(rule_ast, control, builder, t_option):
                     unique_everseen(map(str, head_function['arguments'] + body_variables(rule_ast['body'])))),
                 # 'body' contains pairs of function names and arguments found in the body
                 'body': [(lit.get_function()['name'], lit.get_function()['arguments'])
-                               for lit in rest_body if
-                               lit.type == ast.ASTType.Literal and lit['atom'].type == ast.ASTType.SymbolicAtom and lit[
-                                   'sign'] == ast.Sign.NoSign]
+                         for lit in rest_body if
+                         lit.type == ast.ASTType.Literal and lit['atom'].type == ast.ASTType.SymbolicAtom and lit[
+                             'sign'] == ast.Sign.NoSign]
             }
 
             # Generates fired rule
@@ -291,12 +291,12 @@ def prepare_xclingo_program(original_program, t_option):
     # Sets theory atom &label and parses/handles input program
     with control.builder() as builder:
         # Adds theories
-        parse_program("#program base. #theory label_rule {t { }; &label_rule/0: t, any}.",
-                      lambda ast: builder.add(ast))
-        parse_program("#program base. #theory label_atoms {t { }; &label_atoms/0: t, any}.",
-                      lambda ast: builder.add(ast))
+        parse_program("#program base. #theory trace {t { }; &trace/0: t, any}.",
+                      lambda ast_object: builder.add(ast_object))
+        parse_program("#program base. #theory trace_all {t { }; &trace_all/0: t, any}.",
+                      lambda ast_object: builder.add(ast_object))
         # Handle xclingo sentences
         parse_program("#program base." + translated_program,
-                      lambda ast: _translate_to_fired_holds(ast, control, builder, t_option))
+                      lambda ast_object: _translate_to_fired_holds(ast_object, control, builder, t_option))
 
     return control
