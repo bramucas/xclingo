@@ -293,9 +293,23 @@ def prepare_xclingo_program(clingo_arguments, original_program, t_option):
     # Sets theory atom &label and parses/handles input program
     with control.builder() as builder:
         # Adds theories
-        parse_program("#program base. #theory trace {t { - : 7, unary; + : 6, binary, left }; &trace/0: t, any}.",
+        parse_program("""#program base. 
+                        #theory trace {
+                            t { 
+                                - : 7, unary;
+                                + : 6, binary, left; 
+                                - : 6, binary, left 
+                            }; 
+                            &trace/0: t, any}.""",
                       lambda ast_object: builder.add(ast_object))
-        parse_program("#program base. #theory trace_all {t { - : 7, unary; + : 6, binary, left }; &trace_all/0: t, any}.",
+        parse_program("""#program base. 
+                        #theory trace_all {
+                            t { 
+                                - : 7, unary; 
+                                + : 6, binary, left; 
+                                - : 6, binary, left 
+                            }; 
+                            &trace_all/0: t, any}.""",
                       lambda ast_object: builder.add(ast_object))
         # Handle xclingo sentences
         parse_program("#program base." + translated_program,
