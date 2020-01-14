@@ -207,8 +207,8 @@ def ascii_tree_explanation(explanation):
 def main():
     # Handles arguments of xclingo
     parser = argparse.ArgumentParser(description='Tool for debugging and explaining ASP programs')
-    parser.add_argument('-t', action='store_true', default=False,
-                        help="If enabled, the program will just show the translation of the input program")
+    parser.add_argument('--debug-level', type=str, choices=["none", "magic-comments", "translation", "causes"], default="none",
+                        help="Points out the debugging level.")
     parser.add_argument('--auto-labelling', type=str, choices=["none", "facts", "all"], default="none",
                         help="Automatically creates labels for the rules of the program. Default: none.")
     #parser.add_argument('n_sol', nargs='?', type=int, default=0, help="Number of solutions")
@@ -221,11 +221,7 @@ def main():
         original_program += file.read()
 
     # Prepares the original program and obtain an XClingoControl
-    control = translation.prepare_xclingo_program(['-n 0'], original_program, args.t)
-
-    # JUST FOR DEBUGGING TODO: delete this
-    if args.t:
-        exit(0)
+    control = translation.prepare_xclingo_program(['-n 0'], original_program, args.debug_level)
 
     control.ground([("base", [])])
 
@@ -241,6 +237,10 @@ def main():
 
             # Causes data frame for the current model
             causes = build_causes(control.traces, build_fired_dict(m), labels_dict, args.auto_labelling)
+
+            if args.debug_level == "causes":
+                print(causes, end="\n\n")
+                continue
 
             # atoms_to_explain stores the atom that have to be explained for the current model.
             fired_show_all = [remove_prefix("show_all_", a) for a in find_and_remove_by_prefix(m, 'show_all_')]

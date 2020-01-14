@@ -278,7 +278,7 @@ def _translate_to_fired_holds(rule_ast, control, builder, t_option):
         _add_to_base(generated_rules, builder, t_option)
 
 
-def prepare_xclingo_program(clingo_arguments, original_program, t_option):
+def prepare_xclingo_program(clingo_arguments, original_program, debug_level):
     control = XClingoProgramControl(clingo_arguments)
 
     # Pre-processing original program
@@ -289,6 +289,11 @@ def prepare_xclingo_program(clingo_arguments, original_program, t_option):
     translated_program = _translate_explains(translated_program)
 
     control.have_explain = bool(aux != translated_program)
+
+    # Prints translated_program and exits
+    if debug_level == "magic-comments":
+        print(translated_program)
+        exit(0)
 
     # Sets theory atom &label and parses/handles input program
     with control.builder() as builder:
@@ -312,7 +317,13 @@ def prepare_xclingo_program(clingo_arguments, original_program, t_option):
                             &trace_all/0: t, any}.""",
                       lambda ast_object: builder.add(ast_object))
         # Handle xclingo sentences
-        parse_program("#program base." + translated_program,
-                      lambda ast_object: _translate_to_fired_holds(ast_object, control, builder, t_option))
+        parse_program(
+            "#program base." + translated_program,
+            lambda ast_object: _translate_to_fired_holds(ast_object, control, builder, debug_level == "translation")
+        )
+
+    # Translation was printed during _translate_to_fired_holds so we can now exit
+    if debug_level == "translation":
+        exit(0)
 
     return control
