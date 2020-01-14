@@ -42,8 +42,8 @@ h(closed(s1),I+1) :- o(close(s1),I), step(I).
 %!trace_all {"The relay is inactive at %",J} -h(r_active,J).
 %!trace_all {"The light is on at %",J} h(b_on,J).
 %!trace_all {"The light is off at %",J} -h(b_on,J).
-%!trace_all {"Switch % is closed at %",J} h(closed(S),J):-switch(S).
-%!trace_all {"Switch % is open at %",J} -h(closed(S),J):-switch(S).
+%!trace_all {"Switch % is closed at %",S,J} h(closed(S),J):-switch(S).
+%!trace_all {"Switch % is open at %",S,J} -h(closed(S),J):-switch(S).
 
 
 
@@ -95,3 +95,4 @@ no(Z,I) :- step(I), exog(Z), not o(Z,I).
 %#show numexog/1.
 
 %!show_all o(X,Y).
+%!show_all h(X,Y).
