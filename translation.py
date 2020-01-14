@@ -114,7 +114,7 @@ def _translate_label_rules(program):
     @param str program: the program that is intended to be modified.
     @return str:
     """
-    for hit in re.findall("(%!trace \{(.*)\}[ ]*\n[ ]*(\-?[a-z][a-zA-Z]*(?:\(.*\))?[ ]*:-[ ]*.*).)", program):
+    for hit in re.findall("(%!trace \{(.*)\}[ ]*\n[ ]*(\-?[a-z][a-zA-Z]*(?:\((?:[\-a-zA-Z0-9 \(\)\,\_])+\))?[ ]*:-[ ]*.*).)", program):
         # 0: original match  1: label_parameters  2: complete original rule
         program = program.replace(
             hit[0],
@@ -130,7 +130,7 @@ def _translate_label_atoms(program):
     @param str program: the program that is intended to be modified
     @return str:
     """
-    for hit in re.findall("(%!trace_all \{(.*)\} (\-?[a-z][a-zA-Z]*(?:\([^\.(?:\:\-)]*\))?)(?:[ ]*:-[ ]*(.*))?\.)", program):
+    for hit in re.findall("(%!trace_all \{(.*)\} (\-?[a-z][a-zA-Z]*(?:\((?:[\-a-zA-Z0-9 \(\)\,\_])+\)))(?:[ ]*:-[ ]*(.*))?\.)", program):
         # 0: original match 1: "label",v1,v2  2: head  3: body.
         program = program.replace(
             hit[0],
@@ -147,7 +147,7 @@ def _translate_explains(program):
     @param str program:
     @return:
     """
-    for hit in re.findall("(%!show_all ((\-?[a-z][a-zA-Z]*(?:\(.*\)))(?:[ ]*:-[ ]*(.*))?\.))", program):
+    for hit in re.findall("(%!show_all ((\-?[a-z][a-zA-Z]*(?:\((?:[\-a-zA-Z0-9 \(\)\,\_])+\)))(?:[ ]*:-[ ]*(.*))?\.))", program):
         # 0: original match  1: rule  2: head of the rule  3: body of the rule
         program = program.replace(
             hit[0],
