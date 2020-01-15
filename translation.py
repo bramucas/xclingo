@@ -42,7 +42,9 @@ class XClingoAST(ast.AST):
         """
         @return bool: True if the rule is a constraint, False if not.
         """
-        return self['head']['atom'].type == ast.ASTType.BooleanConstant and self['head']['atom']['value'] == False
+        return self['head'].type == ast.ASTType.Literal \
+            and self['head']['atom'].type == ast.ASTType.BooleanConstant \
+            and self['head']['atom']['value'] == False
 
     def is_trace_all_rule(self):
         """
@@ -77,6 +79,9 @@ class XClingoAST(ast.AST):
             else:
                 # Adds the prefix to the ast of the head
                 self['head'].add_prefix(prefix)
+        # Aggregates special case
+        elif self.type == ast.ASTType.Aggregate:
+            print(self.items())
         else:
             fun = self.get_function()
             if fun:
@@ -100,12 +105,10 @@ class XClingoAST(ast.AST):
         if self.type == ast.ASTType.Literal:
             return XClingoAST(self['atom']).get_function()
 
-        if self.type in (ast.ASTType.Comparison, ast.ASTType.BooleanConstant):
+        if self.type in (ast.ASTType.Comparison, ast.ASTType.BooleanConstant, ast.ASTType.Aggregate):
             return None
 
-        print(self)
-        print(self.type)
-        raise RuntimeError(str(self.type) + "  do not have Function.")
+        raise RuntimeError("'{ast}' (type:{type}) do not have Function.".format(ast=str(self), type=str(self.type)))
 
 
 def _translate_label_rules(program):
@@ -152,6 +155,23 @@ def _translate_explains(program):
         program = program.replace(
             hit[0],
             "{prefix}{head}:-{head}{body}.".format(prefix="show_all_", head=hit[2], body="," + hit[3] if hit[3] else "")
+        )
+
+    return program
+
+
+def _translate_weak_constraints(program):
+    """
+    Replaces 'weak' magic comments in the given program for a rule version of those magic comments.
+    @param str program:
+    @return:
+    """
+    for hit in re.findall(
+            "(%!(weak \{.*\}[ ]*\n[ ]*:-[ ]*.*\.))", program):
+        # 0: original match  1: original match but starting without '%!'
+        program = program.replace(
+            hit[0],
+            "&{}.\n".format(hit[1])
         )
 
     return program
@@ -287,8 +307,9 @@ def prepare_xclingo_program(clingo_arguments, original_program, debug_level):
 
     aux = translated_program
     translated_program = _translate_explains(translated_program)
-
     control.have_explain = bool(aux != translated_program)
+
+    translated_program = _translate_weak_constraints(translated_program)
 
     # Prints translated_program and exits
     if debug_level == "magic-comments":
@@ -315,6 +336,15 @@ def prepare_xclingo_program(clingo_arguments, original_program, debug_level):
                                 - : 6, binary, left 
                             }; 
                             &trace_all/0: t, any}.""",
+                      lambda ast_object: builder.add(ast_object))
+        parse_program("""#program base. 
+                        #theory weak {
+                            t { 
+                                - : 7, unary; 
+                                + : 6, binary, left; 
+                                - : 6, binary, left
+                            };
+                            &weak/0: t, head}.""",
                       lambda ast_object: builder.add(ast_object))
         # Handle xclingo sentences
         parse_program(
