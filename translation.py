@@ -1,3 +1,5 @@
+from collections import Iterable
+
 from clingo import Control, parse_program, ast
 import re
 from more_itertools import unique_everseen
@@ -24,19 +26,98 @@ class XClingoProgramControl(Control):
         return current
 
 
-class XClingoAST(ast.AST):
+class XClingoAST():
+    _internal_ast = None  # Type: ast.AST
+    type = None  # Type: ast.AST.ASTType
+    child_keys = None  # Type: List [ str ]
+
+    # l =[method for method in dir(my_ast) if method != 'use_enumeration_assumption' and callable(getattr(my_ast, method))]
 
     def __init__(self, base_ast):
-        super().__init__(base_ast.type)
-        # Convert children that are AST
-        for k in base_ast:
-            if type(base_ast[k]) == ast.AST:
-                self[k] = XClingoAST(base_ast[k])
-            elif type(base_ast[k]) == list:  # Only the elements that are AST
-                self[k] = [XClingoAST(item) if type(item) == ast.AST else item
-                           for item in base_ast[k]]
-            else:  # If is not AST or list(AST) then do nothing
-                self[k] = base_ast[k]
+        """
+
+        @param ast.AST base_ast:
+        """
+        self._internal_ast = base_ast
+
+        self.type = base_ast.type
+        self.child_keys = base_ast.child_keys
+
+    """ast.AST methods"""
+    def items(self):
+        return self._internal_ast.items()
+
+    def keys(self):
+        return self._internal_ast.keys()
+
+    def values(self):
+        return self._internal_ast.values()
+
+    """container methods and other"""
+    def __contains__(self, item):
+        return self._internal_ast.__contains__(item)
+
+    def __getitem__(self, item):
+        item = self._internal_ast.__getitem__(item)
+        if type(item) == ast.AST:
+            return XClingoAST(item)
+        if type(item) == list:
+            new_list = []
+            for i in item:
+                if type(i) == ast.AST:
+                    new_list.append(XClingoAST(i))
+                else:
+                    new_list.append(i)
+            return new_list
+        else:
+            return item
+
+    def __delattr__(self, item):
+        self._internal_ast.__delattr__(item)
+
+    def __delitem__(self, key):
+        self._internal_ast.__delitem__(key)
+
+    def __eq__(self, other):
+        return self._internal_ast.__eq__(other)
+
+    def __format__(self, format_spec):
+        return self._internal_ast.__format__(format_spec)
+
+    def __ge__(self, other):
+        return self._internal_ast.__ge__(other)
+
+    # def __getattribute__(self, item):
+    #     return self._internal_ast.__getattribute__(item)
+
+    def __gt__(self, other):
+        return self._internal_ast.__gt__(other)
+
+    def __iter__(self):
+        return self._internal_ast.__iter__()
+
+    def __le__(self, other):
+        return self._internal_ast.__le__()
+
+    def __len__(self):
+        return self._internal_ast.__len__()
+
+    def __lt__(self, other):
+        return self._internal_ast.__lt__()
+
+    def __ne__(self, other):
+        return self._internal_ast.__ne__()
+
+    # def __setattr__(self, key, value):
+    #     self._internal_ast.__setattr__(key, value)
+
+    def __setitem__(self, key, value):
+        self._internal_ast.__setitem__(key, value)
+
+    def __str__(self):
+        return self._internal_ast.__str__()
+
+    """XclingoAST methods"""
 
     def is_constraint(self):
         """
@@ -54,7 +135,7 @@ class XClingoAST(ast.AST):
         """
         @return bool: True if the rule is an instance of a xclingo show_all rule, False if not.
         """
-        return str(self['head']).startswith("show_all_")
+        return str(self['head']).startswith("show_all_") or str(self['head']).startswith("nshow_all_")
 
     def add_prefix(self, prefix):
         """
@@ -98,7 +179,7 @@ class XClingoAST(ast.AST):
             return self['argument'].get_function()
 
         if self.type == ast.ASTType.Literal:
-            return XClingoAST(self['atom']).get_function()
+            return self['atom'].get_function()
 
         if self.type in (ast.ASTType.Comparison, ast.ASTType.BooleanConstant):
             return None
@@ -108,13 +189,14 @@ class XClingoAST(ast.AST):
         raise RuntimeError(str(self.type) + "  do not have Function.")
 
 
-def _translate_label_rules(program):
+def _translate_trace(program):
     """
     Replaces the 'label_rule' magic comments in the given program for a version of the rules labelled with theory atoms.
     @param str program: the program that is intended to be modified.
     @return str:
     """
-    for hit in re.findall("(%!trace \{(.*)\}[ ]*\n[ ]*(\-?[a-z][a-zA-Z]*(?:\((?:[\-a-zA-Z0-9 \(\)\,\_])+\))?[ ]*:-[ ]*.*).)", program):
+                         # (%!trace \{(.*)\}[ ]*\n[ ]*(\-?[a-z][a-zA-Z]*(?:\((?:[\-a-zA-Z0-9+ \(\)\,\_])+\))?[ ]*:-[ ]*.*).)
+    for hit in re.findall("(%!trace \{(.*)\}[ ]*\n[ ]*(\-?[a-z][a-zA-Z]*(?:\((?:[\-a-zA-Z0-9+ \(\)\,\_])+\))?[ ]*:-[ ]*.*).)", program):
         # 0: original match  1: label_parameters  2: complete original rule
         program = program.replace(
             hit[0],
@@ -124,13 +206,13 @@ def _translate_label_rules(program):
     return program
 
 
-def _translate_label_atoms(program):
+def _translate_trace_all(program):
     """
     Replaces the 'label_atoms' magic comments in the given program for label_atoms rule.
     @param str program: the program that is intended to be modified
     @return str:
     """
-    for hit in re.findall("(%!trace_all \{(.*)\} (\-?[a-z][a-zA-Z]*(?:\((?:[\-a-zA-Z0-9 \(\)\,\_])+\)))(?:[ ]*:-[ ]*(.*))?\.)", program):
+    for hit in re.findall("(%!trace_all \{(.*)\} (\-?[a-z][a-zA-Z]*(?:\((?:[\-\+a-zA-Z0-9 \(\)\,\_])+\)))(?:[ ]*:-[ ]*(.*))?\.)", program):
         # 0: original match 1: "label",v1,v2  2: head  3: body.
         program = program.replace(
             hit[0],
@@ -141,17 +223,22 @@ def _translate_label_atoms(program):
     return program
 
 
-def _translate_explains(program):
+def _translate_show_all(program):
     """
     Replaces 'explain' magic comments in the given program for a rule version of those magic comments.
     @param str program:
     @return:
     """
-    for hit in re.findall("(%!show_all ((\-?[a-z][a-zA-Z]*(?:\((?:[\-a-zA-Z0-9 \(\)\,\_])+\)))(?:[ ]*:-[ ]*(.*))?\.))", program):
-        # 0: original match  1: rule  2: head of the rule  3: body of the rule
+    for hit in re.findall("(%!show_all ((\-)?([a-z][a-zA-Z]*(?:\((?:[\-a-zA-Z0-9 \(\)\,\_])+\)))(?:[ ]*:-[ ]*(.*))?\.))", program):
+        # 0: original match  1: rule  2: negative_sign  3: head of the rule  4: body of the rule
         program = program.replace(
             hit[0],
-            "{prefix}{head}:-{head}{body}.".format(prefix="show_all_", head=hit[2], body="," + hit[3] if hit[3] else "")
+            "{sign}{prefix}{head}:-{classic_negation}{head}{body}.".format(
+                sign="" if not hit[2] else "n",
+                prefix="show_all_",
+                head=hit[3],
+                classic_negation="" if not hit[2] else "-",
+                body="," + hit[4] if hit[4] else "")
         )
 
     return program
@@ -222,6 +309,7 @@ def _translate_to_fired_holds(rule_ast, control, builder, t_option):
                 translated_rule = str(rule_ast['head']) + "."
 
             generated_rules = translated_rule + "\n"
+            #print("--> " + str(generated_rules))
         else:  # Other cases
             rule_counter = control.count_rule()
 
@@ -232,11 +320,13 @@ def _translate_to_fired_holds(rule_ast, control, builder, t_option):
 
             # Keep trace of head, arguments and body of the rules using rule_counter
             control.traces[rule_counter] = {
-                'head': (str(head_function['name']), head_function['arguments']),
+                'head': (rule_ast['head']['atom']['term'].type != ast.ASTType.UnaryOperation,
+                         str(head_function['name']), head_function['arguments']),
                 'arguments': list(
                     unique_everseen(map(str, head_function['arguments'] + body_variables(rule_ast['body'])))),
                 # 'body' contains pairs of function names and arguments found in the body
-                'body': [(lit.get_function()['name'], lit.get_function()['arguments'])
+                'body': [(lit['atom']['term'].type != ast.ASTType.UnaryOperation,
+                          lit.get_function()['name'], lit.get_function()['arguments'])
                          for lit in rest_body if
                          lit.type == ast.ASTType.Literal and lit['atom'].type == ast.ASTType.SymbolicAtom and lit[
                              'sign'] == ast.Sign.NoSign]
@@ -258,17 +348,18 @@ def _translate_to_fired_holds(rule_ast, control, builder, t_option):
             else:
                 fired_rule = fired_head + "."
 
-            # Generates holds rule
-            rule_ast['head'].add_prefix('holds_')
-            holds_rule = "{head} :- {body}.".format(head=str(rule_ast['head']), body=fired_head)
-
             # Generates label rules
             label_rules = ""
             for label_ast in label_body:
-                label_rules += "&trace{{{fired_id},{label_parameters}}} :- {body}.\n".format(
+                label_rules += "&trace{{{fired_id},{original_head},{label_parameters}}} :- {body}.\n".format(
                     fired_id=str(rule_counter),
+                    original_head=str(rule_ast['head']),
                     label_parameters=",".join([str(e) for e in label_ast['atom']['elements']]),
                     body=fired_head)
+
+            # Generates holds rule
+            rule_ast['head'].add_prefix('holds_')
+            holds_rule = "{head} :- {body}.".format(head=str(rule_ast['head']), body=fired_head)
 
             # Generates a comment
             comment = "%" + str(rule_ast)
@@ -282,11 +373,11 @@ def prepare_xclingo_program(clingo_arguments, original_program, debug_level):
     control = XClingoProgramControl(clingo_arguments)
 
     # Pre-processing original program
-    translated_program = _translate_label_rules(original_program)
-    translated_program = _translate_label_atoms(translated_program)
+    translated_program = _translate_trace(original_program)
+    translated_program = _translate_trace_all(translated_program)
 
     aux = translated_program
-    translated_program = _translate_explains(translated_program)
+    translated_program = _translate_show_all(translated_program)
 
     control.have_explain = bool(aux != translated_program)
 
@@ -307,6 +398,7 @@ def prepare_xclingo_program(clingo_arguments, original_program, debug_level):
                             }; 
                             &trace/0: t, any}.""",
                       lambda ast_object: builder.add(ast_object))
+        print()
         parse_program("""#program base. 
                         #theory trace_all {
                             t { 
