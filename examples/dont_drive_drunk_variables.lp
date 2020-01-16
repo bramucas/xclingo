@@ -8,7 +8,7 @@ alcohol(gabriel, 40).
 
 drive(clare).
 alcohol(clare, 0).
-
+-resist(clare).
 
 punish(P) :- drive(P), alcohol(P,A), A>30.
 punish(P) :- resist(P).
@@ -18,6 +18,7 @@ sentence(P, prison) :-  punish(P).
 
 %!trace {"% is innocent.",P}
 sentence(P, innocent) :-person(P), not sentence(P, prison).
+
 
 
 
