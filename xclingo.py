@@ -4,7 +4,7 @@ import sys
 import argparse
 import clingo
 
-from pandas import DataFrame
+from pandas import DataFrame, option_context
 from clingo_utilities import find_by_prefix, remove_prefix, find_and_remove_by_prefix
 from more_itertools import unique_everseen
 import translation
@@ -63,11 +63,12 @@ def build_causes(m, traces, fired_values, labels_dict, auto_labelling):
             for (positive, name, variables) in traces[fired_id]['body']:
                 values = []
                 for v in variables:
+
                     if v.type == clingo.ast.ASTType.Variable:
                         values.append(var_val[str(v)])
                     elif v.type == clingo.ast.ASTType.Symbol:
                         if v['symbol'].type == clingo.SymbolType.Number:
-                            values.append(str(v))
+                            values.append(int(str(v)))
                         else:
                             values.append(clingo.Function(v['symbol'].name, v['symbol'].arguments, v['symbol'].positive))
                     elif v.type == clingo.ast.ASTType.Function:
@@ -76,6 +77,24 @@ def build_causes(m, traces, fired_values, labels_dict, auto_labelling):
                                 v['name'],
                                 [clingo.Function(a['symbol'].name, a['symbol'].arguments) for a in v['arguments']])
                             )
+                    elif v.type == clingo.ast.ASTType.BinaryOperation:
+                        operators = []
+                        for k in v.child_keys:
+                            if v[k].type == clingo.ast.ASTType.Variable:
+                                operators.append(var_val[str(v[k])])
+                            elif v[k].type == clingo.ast.ASTType.Symbol and v[k]['symbol'].type == clingo.SymbolType.Number:
+                                operators.append(v[k]['symbol'])
+
+                        if v['operator'] == clingo.ast.BinaryOperator.Minus:
+                            values.append(operators[0].number - operators[1].number)
+                        elif v['operator'] == clingo.ast.BinaryOperator.Plus:
+                            values.append(operators[0].number + operators[1].number)
+                        elif v['operator'] == clingo.ast.BinaryOperator.Multiplication:
+                            values.append(operators[0].number * operators[1].number)
+                        elif v['operator'] == clingo.ast.BinaryOperator.Division:
+                            values.append(operators[0].number / operators[1].number)
+
+
                 fired_body.append(clingo.Function(name, values, positive))
 
             # Labels
@@ -310,7 +329,7 @@ def main():
 
             if args.debug_level == "causes":
                 print(general_labels_dict)
-                print(causes, end="\n\n")
+                print(causes.to_string(), end="\n\n")
                 continue
 
             # atoms_to_explain stores the atom that have to be explained for the current model.

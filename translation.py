@@ -195,12 +195,15 @@ def _translate_trace(program):
     @param str program: the program that is intended to be modified.
     @return str:
     """
-                         # (%!trace \{(.*)\}[ ]*\n[ ]*(\-?[a-z][a-zA-Z]*(?:\((?:[\-a-zA-Z0-9+ \(\)\,\_])+\))?[ ]*:-[ ]*.*).)
-    for hit in re.findall("(%!trace \{(.*)\}[ ]*\n[ ]*(\-?[a-z][a-zA-Z]*(?:\((?:[\-a-zA-Z0-9+ \(\)\,\_])+\))?[ ]*:-[ ]*.*).)", program):
-        # 0: original match  1: label_parameters  2: complete original rule
+                         # (%!trace \{(.*)\}[ ]*\n[ ]*(\-?[a-z][a-zA-Z]*(?:\((?:[\-a-zA-Z0-9+ \(\)\,\_])+\))?(?:[ ]*:-[ ]*.*)?).)
+    for hit in re.findall("(%!trace \{(.*)\}[ ]*[\n ]*(\-?[a-z][a-zA-Z]*(?:\((?:[\-a-zA-Z0-9+ \(\)\,\_])+\))?)(?:[ ]*:-[ ]*(.*))?.)", program):
+        # 0: original match  1: label parameters  2: head of the rule  3: body of the rule
         program = program.replace(
             hit[0],
-            "{rule}, &trace{{{label_parameters}}}.\n".format(rule=hit[2], label_parameters=hit[1])
+            "{head} :- {body} &trace{{{label_parameters}}}.\n".format(
+                head=hit[2], label_parameters=hit[1],
+                body=hit[3] + "," if hit[3] else ""
+            )
         )
 
     return program
