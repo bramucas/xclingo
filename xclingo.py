@@ -311,7 +311,8 @@ def main():
         original_program += file.read()
 
     # Prepares the original program and obtain an XClingoControl
-    control = translation.prepare_xclingo_program(['-n 0'], original_program, args.debug_level)
+    # TODO: why some trace_alls are duplicating answer sets? patch: --project
+    control = translation.prepare_xclingo_program(['-n 0', "--project"], original_program, args.debug_level)
 
     control.ground([("base", [])])
 
