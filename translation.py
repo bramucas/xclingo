@@ -196,7 +196,7 @@ def _translate_trace(program):
     @return str:
     """
                          # (%!trace \{(.*)\}[ ]*\n[ ]*(\-?[a-z][a-zA-Z]*(?:\((?:[\-a-zA-Z0-9+ \(\)\,\_])+\))?(?:[ ]*:-[ ]*.*)?).)
-    for hit in re.findall("(%!trace \{(.*)\}[ ]*[\n ]*(\-?[a-z][a-zA-Z]*(?:\((?:[\-a-zA-Z0-9+ \(\)\,\_])+\))?)(?:[ ]*:-[ ]*(.*))?.)", program):
+    for hit in re.findall("(%!trace_rule \{(.*)\}[ ]*[\n ]*(\-?[_a-z][_a-zA-Z]*(?:\((?:[\-a-zA-Z0-9+ \(\)\,\_])+\))?)(?:[ ]*:-[ ]*(.*))?.)", program):
         # 0: original match  1: label parameters  2: head of the rule  3: body of the rule
         program = program.replace(
             hit[0],
@@ -215,7 +215,7 @@ def _translate_trace_all(program):
     @param str program: the program that is intended to be modified
     @return str:
     """
-    for hit in re.findall("(%!trace_all \{(.*)\} (\-?[a-z][a-zA-Z]*(?:\((?:[\-\+a-zA-Z0-9 \(\)\,\_])+\)))(?:[ ]*:-[ ]*(.*))?\.)", program):
+    for hit in re.findall("(%!trace \{(.*)\} (\-?[_a-z][_a-zA-Z]*(?:\((?:[\-\+a-zA-Z0-9 \(\)\,\_])+\)))(?:[ ]*:[ ]*(.*))?\.)", program):
         # 0: original match 1: "label",v1,v2  2: head  3: body.
         program = program.replace(
             hit[0],
@@ -232,7 +232,7 @@ def _translate_show_all(program):
     @param str program:
     @return:
     """
-    for hit in re.findall("(%!show_all ((\-)?([a-z][a-zA-Z]*(?:\((?:[\-a-zA-Z0-9 \(\)\,\_])+\)))(?:[ ]*:-[ ]*(.*))?\.))", program):
+    for hit in re.findall("(%!show_trace ((\-)?([_a-z][_a-zA-Z]*(?:\((?:[\-a-zA-Z0-9 \(\)\,\_])+\)))(?:[ ]*:[ ]*(.*))?\.))", program):
         # 0: original match  1: rule  2: negative_sign  3: head of the rule  4: body of the rule
         program = program.replace(
             hit[0],

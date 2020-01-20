@@ -1,0 +1,9 @@
+
+person(a;b;c;d).
+%!trace {"choice for %",X}
+2 {loves(X,Y) : person(Y)} 3 :- person(X).
+%!trace {"those who love a also love b"}
+loves(X,b) :- loves(X,a).
+
+:- loves(X,X).
+#show loves/2.

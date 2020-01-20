@@ -1,0 +1,14 @@
+
+person(a;b;c;d).
+%!trace {"choice for %",X}
+2 {f_loves(1,X,Y) : person(Y)} 3 :- person(X).
+:- person(X), not 2 {h_loves(X,Y) : person(Y)} 3.
+%!trace {"those who love a also love b"}
+f_loves(2,X,b) :- h_loves(X,a).
+h_loves(X,Y) :- f_loves(L,X,Y).
+:- h_loves(X,X).
+% #show h_loves/2. % usar con --project y comentar show de debajo
+#show f_loves/3.
+#show query/1.
+query(X) :- f_loves(1,X,Y),f_loves(2,X,Y).
+:- not query(_).

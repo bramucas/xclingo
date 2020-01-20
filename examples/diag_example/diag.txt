@@ -26,7 +26,7 @@ action(Y):-agent(Y).
 -h(F,I+1) :- -h(F,I), not  h(F,I+1), step(I), fluent(F).
 
 % Direct effects
-%!trace {"Switch s1 was closed at %",I}
+%!trace_rule {"Switch s1 was closed at %",I}
 h(closed(s1),I+1) :- o(close(s1),I), step(I).
 
 % Indirect effects
@@ -38,12 +38,12 @@ h(closed(s1),I+1) :- o(close(s1),I), step(I).
 -h(b_on,J) :- -h(closed(s2),J), time(J).
 -h(b_on,J) :- h(ab(b),J), time(J).
 
-%!trace_all {"The relay is active at %",J} h(r_active,J).
-%!trace_all {"The relay is inactive at %",J} -h(r_active,J).
-%!trace_all {"The light is on at %",J} h(b_on,J).
-%!trace_all {"The light is off at %",J} -h(b_on,J).
-%!trace_all {"Switch % is closed at %",S,J} h(closed(S),J):-switch(S).
-%!trace_all {"Switch % is open at %",S,J} -h(closed(S),J):-switch(S).
+%!trace {"The relay is active at %",J} h(r_active,J).
+%!trace {"The relay is inactive at %",J} -h(r_active,J).
+%!trace {"The light is on at %",J} h(b_on,J).
+%!trace {"The light is off at %",J} -h(b_on,J).
+%!trace {"Switch % is closed at %",S,J} h(closed(S),J): switch(S).
+%!trace {"Switch % is open at %",S,J} -h(closed(S),J): switch(S).
 
 
 
@@ -51,11 +51,11 @@ h(closed(s1),I+1) :- o(close(s1),I), step(I).
 :- o(close(S),J), h(closed(S),J), time(J), switch(S).
 
 % Malfunctioning
-%!trace {"The bulb is broken at %",I} 
+%!trace_rule {"The bulb is broken at %",I} 
 h(ab(b),I+1) :- o(break,I), step(I).
-%!trace {"The relay is damaged at %",I} 
+%!trace_rule {"The relay is damaged at %",I} 
 h(ab(r),I+1) :- o(surge,I), step(I).
-%!trace {"The bulb is damaged at %",I} 
+%!trace_rule {"The bulb is damaged at %",I} 
 h(ab(b),I+1) :- o(surge,I), not h(b_prot,I), step(I).
 
 % Something happening actually occurs
@@ -80,9 +80,9 @@ obs(b_prot,0).
 % Something went wrong
 -obs(b_on,1).
 
-%!trace_all {"There was a power surge at %",J} o(surge,J).
-%!trace_all {"Something broke the bulb at %",J} o(break,J).
-%!trace_all {"The agent closed switch s1 at %",J} o(close(s1),J).
+%!trace {"There was a power surge at %",J} o(surge,J).
+%!trace {"Something broke the bulb at %",J} o(break,J).
+%!trace {"The agent closed switch s1 at %",J} o(close(s1),J).
 
 % Diagnostic module: generate exogenous actions
 % { o(Z,I): exog(Z) } :- step(I).
@@ -94,5 +94,5 @@ no(Z,I) :- step(I), exog(Z), not o(Z,I).
 %#show o/2.
 %#show numexog/1.
 
-%!show_all o(X,Y).
-%!show_all h(X,Y).
+%!show_trace o(X,Y).
+%!show_trace h(X,Y).
