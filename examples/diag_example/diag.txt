@@ -1,0 +1,98 @@
+
+plength(1).
+
+time(0..L) :- plength(L).
+step(0..L-1) :- plength(L).
+%% TODO: accept pools as input
+% switch(s1;s2).
+switch(s1). switch(s2).
+% component(r;b).
+component(r). component(b).
+
+fluent(r_active).
+fluent(b_on).
+fluent(b_prot).
+fluent(closed(S)):-switch(S).
+fluent(ab(C)):-component(C).
+
+agent(close(s1)).
+exog(break).
+exog(surge).
+action(Y):-exog(Y).
+action(Y):-agent(Y).
+
+% Inertia (boolean fluents)
+ h(F,I+1) :-  h(F,I), not -h(F,I+1), step(I), fluent(F).
+-h(F,I+1) :- -h(F,I), not  h(F,I+1), step(I), fluent(F).
+
+% Direct effects
+%!trace_rule {"Switch s1 was closed at %",I}
+h(closed(s1),I+1) :- o(close(s1),I), step(I).
+
+% Indirect effects
+   h(r_active,J) :- h(closed(s1),J), -h(ab(r),J), time(J).
+  -h(r_active,J) :- -h(closed(s1),J), time(J).
+  -h(r_active,J) :- h(ab(r),J), time(J).
+ h(closed(s2),J) :- h(r_active,J), time(J).
+ h(b_on,J) :-  h(closed(s2),J), -h(ab(b),J), time(J).
+-h(b_on,J) :- -h(closed(s2),J), time(J).
+-h(b_on,J) :- h(ab(b),J), time(J).
+
+%!trace {"The relay is active at %",J} h(r_active,J).
+%!trace {"The relay is inactive at %",J} -h(r_active,J).
+%!trace {"The light is on at %",J} h(b_on,J).
+%!trace {"The light is off at %",J} -h(b_on,J).
+%!trace {"Switch % is closed at %",S,J} h(closed(S),J): switch(S).
+%!trace {"Switch % is open at %",S,J} -h(closed(S),J): switch(S).
+
+
+
+% Executability
+:- o(close(S),J), h(closed(S),J), time(J), switch(S).
+
+% Malfunctioning
+%!trace_rule {"The bulb is broken at %",I} 
+h(ab(b),I+1) :- o(break,I), step(I).
+%!trace_rule {"The relay is damaged at %",I} 
+h(ab(r),I+1) :- o(surge,I), step(I).
+%!trace_rule {"The bulb is damaged at %",I} 
+h(ab(b),I+1) :- o(surge,I), not h(b_prot,I), step(I).
+
+% Something happening actually occurs
+o(A,I) :- hpd(A,I), step(I).
+
+% Check that observations hold
+:- obs(F,J), not h(F,J), time(J), fluent(F).
+:- -obs(F,J), not -h(F,J), time(J), fluent(F).
+
+% Completing the initial state
+% 1 {h(F,0); -h(F,0)} 1 :- fluent(F).
+h(F,0) :- fluent(F), not -h(F,0).
+-h(F,0) :- fluent(F), not h(F,0).
+
+% A history
+hpd(close(s1),0).
+-obs(closed(s1),0).
+-obs(closed(s2),0).
+obs(b_prot,0).
+-obs(ab(b),0).
+-obs(ab(r),0).
+% Something went wrong
+-obs(b_on,1).
+
+%!trace {"There was a power surge at %",J} o(surge,J).
+%!trace {"Something broke the bulb at %",J} o(break,J).
+%!trace {"The agent closed switch s1 at %",J} o(close(s1),J).
+
+% Diagnostic module: generate exogenous actions
+% { o(Z,I): exog(Z) } :- step(I).
+o(Z,I) :- step(I), exog(Z), not no(Z,I).
+no(Z,I) :- step(I), exog(Z), not o(Z,I).
+
+%numexog(N) :- #count{Z,I:o(Z,I), exog(Z),step(I)}=N.
+%#minimize {N: numexog(N)}.
+%#show o/2.
+%#show numexog/1.
+
+%!show_trace o(X,Y).
+%!show_trace h(X,Y).

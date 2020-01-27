@@ -1,0 +1,22 @@
+
+
+plength(1).
+
+time(0..L) :- plength(L).
+step(1..L) :- plength(L).
+
+%!trace {"p(2) is a fact"}
+p(2).
+p(1) :- p(2).
+
+%!trace {"f is initially true"}
+h(f,true,0).
+h(f,V,1) :- h(f,V,0).
+
+
+%!show_all p(X).
+%!show_all h(F,V,J).
+
+
+%!trace_all {"f is initially true"} h(f,true,0).
+

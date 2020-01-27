@@ -1,0 +1,44 @@
+
+person(a). person(b). person(c). person(d).
+foreigner(c).
+
+hschool(P) :- foreigner(P), convalidation(P).
+
+hschool(a).
+hschool(b).
+hschool(d).
+
+%!trace_all {"% has a high school degree",P} hschool(P).
+career(eng). career(math). career(arch). 
+career(phy). career(chem).
+
+%!trace_all {"% has passed the % exam",P,C} pass(P,C).
+pass(a,eng).
+pass(a,math).
+pass(a,phy).
+pass(b,math).
+pass(b,arch).
+pass(b,phy).
+pass(b,chem).
+pass(c,phy).
+pass(d,chem).
+pass(d,eng).
+
+
+%1 {applies(P,C) : pass(P,C) } 3 :- hschool(P).
+
+% Debería traducirse como
+%1 {fired4(P,C):h_pass(P,C) } 3 :- h_hschool(P).
+% h_applies(P,C) :- fired4(P,C).
+% :- h_hschool(P), not 1 {h_applies(P,C):h_pass(P,C)} 3.
+
+
+%!trace {"% has chosen to apply %",P,C}
+applies(P,C) :- hschool(P),pass(P,C), not noapplies(P,C).
+noapplies(P,C) :- hschool(P),pass(P,C), not applies(P,C).
+%:- hschool(P), not 1 {applies(P,C) : pass(P,C) } 3.
+
+%!trace {"those who apply phy also apply eng"}
+applies(P,eng) :- applies(P,phy).
+
+#show applies/2.
