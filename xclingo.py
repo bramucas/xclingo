@@ -28,7 +28,7 @@ def build_fired_dict(m):
     return fired_values
 
 
-def build_causes(m, traces, fired_values, labels_dict, auto_labelling):
+def build_causes(m, traces, fired_values, labels_dict, auto_tracing):
     """
     Builds a dictionary containing, for each fired atom in a model, the atoms (with values) that caused its derivation.
     It performs this crossing the info in 'traces' and 'fired_values'
@@ -36,7 +36,7 @@ def build_causes(m, traces, fired_values, labels_dict, auto_labelling):
     @param Dict traces: a dictionary (indexed by fired id) containing the head and the body of the original rules.
     @param Dict fired_values: a dictionary (indexed by fired id) that contains the fired values in a model.
     @param Dict labels_dict: a dictionary (indexed by atom with values) that contains their processed labels.
-    @param str auto_labelling: string constant chosen by the user. Options are:
+    @param str auto_tracing: string constant chosen by the user. Options are:
                 - none : atoms and rules just have the labels found on the original program.
                 - facts : rules with empty body must be additionally labeled with a string version of its head.
                 - all : every rule must be additionally labeled with a string version of its head.
@@ -107,7 +107,7 @@ def build_causes(m, traces, fired_values, labels_dict, auto_labelling):
                 if m.is_true(lit):
                     labels.append(label)
 
-            if (auto_labelling == "all" or (auto_labelling == "facts" and fired_body == [])) and labels == []:  # Auto-labelling labels
+            if (auto_tracing == "all" or (auto_tracing == "facts" and fired_body == [])) and labels == []:  # Auto-labelling labels
                 labels.append(str(head))
 
             causes.append(
@@ -296,9 +296,9 @@ def main():
     # Handles arguments of xclingo
     parser = argparse.ArgumentParser(description='Tool for debugging and explaining ASP programs')
     parser.add_argument('--debug-level', type=str, choices=["none", "magic-comments", "translation", "causes"], default="none",
-                        help="Points out the debugging level.")
-    parser.add_argument('--auto-labelling', type=str, choices=["none", "facts", "all"], default="none",
-                        help="Automatically creates labels for the rules of the program. Default: none.")
+                        help="Points out the debugging level. Default: none.")
+    parser.add_argument('--auto-tracing', type=str, choices=["none", "facts", "all"], default="none",
+                        help="Automatically creates traces for the rules of the program. Default: none.")
     #parser.add_argument('n_sol', nargs='?', type=int, default=0, help="Number of solutions")
     parser.add_argument('infile', nargs='+', type=argparse.FileType('r'), default=sys.stdin, help="ASP program")
     args = parser.parse_args()
@@ -324,7 +324,7 @@ def main():
             sol_n += 1
             print("Answer: " + str(sol_n))
 
-            causes = build_causes(m, control.traces, build_fired_dict(m), general_labels_dict, args.auto_labelling)
+            causes = build_causes(m, control.traces, build_fired_dict(m), general_labels_dict, args.auto_tracing)
 
             if args.debug_level == "causes":
                 print(general_labels_dict)
@@ -342,7 +342,7 @@ def main():
                 print("Any show_all rule was activated.")
                 atoms_to_explain = []
             else:   # If there is not show_all rules then explain everything in the model.
-                atoms_to_explain = causes['fired_head']
+                atoms_to_explain = causes['fired_head'].unique()
 
             for a in atoms_to_explain:
                 print(">> {}".format(a), end='')
