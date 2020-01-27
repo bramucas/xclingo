@@ -312,7 +312,6 @@ def _translate_to_fired_holds(rule_ast, control, builder, t_option):
                 translated_rule = str(rule_ast['head']) + "."
 
             generated_rules = translated_rule + "\n"
-            #print("--> " + str(generated_rules))
         else:  # Other cases
             rule_counter = control.count_rule()
 
@@ -322,11 +321,14 @@ def _translate_to_fired_holds(rule_ast, control, builder, t_option):
             head_function = rule_ast['head'].get_function()
 
             # Keep trace of head, arguments and body of the rules using rule_counter
+            fired_head_variables = list(map(str, head_function['arguments'])) + \
+                                   list(set(map(str, body_variables(rule_ast['body']))) - set(map(str, head_function['arguments'])))
+
+
             control.traces[rule_counter] = {
                 'head': (rule_ast['head']['atom']['term'].type != ast.ASTType.UnaryOperation,
                          str(head_function['name']), head_function['arguments']),
-                'arguments': list(
-                    unique_everseen(map(str, head_function['arguments'] + body_variables(rule_ast['body'])))),
+                'arguments': fired_head_variables,
                 # 'body' contains pairs of function names and arguments found in the body
                 'body': [(lit['atom']['term'].type != ast.ASTType.UnaryOperation,
                           lit.get_function()['name'], lit.get_function()['arguments'])
@@ -338,8 +340,7 @@ def _translate_to_fired_holds(rule_ast, control, builder, t_option):
             # Generates fired rule
             fired_head = "fired_{counter}({arguments})".format(
                 counter=str(rule_counter),
-                arguments=",".join(
-                    unique_everseen(map(str, head_function['arguments'] + body_variables(rule_ast['body']))))
+                arguments=",".join(fired_head_variables)
             )
 
             if rest_body:
@@ -362,7 +363,12 @@ def _translate_to_fired_holds(rule_ast, control, builder, t_option):
 
             # Generates holds rule
             rule_ast['head'].add_prefix('holds_')
-            holds_rule = "{head} :- {body}.".format(head=str(rule_ast['head']), body=fired_head)
+            head_function['arguments'] = [ast.Variable(v['location'], "Aux" + str(head_function['arguments'].index(v._internal_ast))) for v in head_function['arguments']]
+            holds_rule = "{head} :- fired_{rule_counter}({fired_arguments}).".format(
+                head=rule_ast['head'],
+                rule_counter=rule_counter,
+                fired_arguments=",".join(["Aux" + str(i) for i in range(0,len(fired_head_variables))])
+                )
 
             # Generates a comment
             comment = "%" + str(rule_ast)
