@@ -223,10 +223,8 @@ def _build_explanations(atom, causes, stack):
                 # This prevents the function to fall in an infinite loop of calls
                 if a in stack:
                     continue
-                else:
-                    stack.append(a)
 
-                a_explanations = _build_explanations(a, causes, stack)
+                a_explanations = _build_explanations(a, causes, stack + [a])
 
                 # Initialize with empty explanation if there is nothing yet
                 if not alt_rule_explanations:
