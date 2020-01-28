@@ -277,5 +277,7 @@ Answer: 1
 Note how the placeholder *%* inside the traces, is replaced by the value of the variables after solving. For example, in the previous example, you can see how the comment ```%!trace {"% has been sentenced to %",P,S} sentence(P,S) : S!=innocent.``` finally results in the trace *gabriel has been sentenced to prison.* when printing the explanations.
 
 
+### Watching the translation of the program
 
+Internally, xclingo produces a translation of the original program which is what is passed to clingo to do the solving. As xclingo is still in development, unawared bugs or unsupported features can produce a bad translation which will cause clingo to fail. Using the option ```--debug-level translation``` will cause xclingo to print the translation as output, which can help out in figuring out what is happening in case of an error.
 
