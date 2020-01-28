@@ -204,7 +204,7 @@ Also, *%!trace* comments can add a condition in order to define the set of atoms
 
 ### Showing only some atoms
 
-In a similar way that with *#show* sentences in clingo, xclingo supports *%!show_trace* magic comments. For example we can use ```%!show_trace s(X).``` to command xlingo to print just the traces that explain s/1 atoms. 
+In a similar way that with *#show* sentences in clingo, xclingo supports *%!show_trace* comments. For example we can use ```%!show_trace s(X).``` to command xlingo to print just the traces that explain s/1 atoms. 
 
 In the same way as with *%!trace* comments the user can define the set of atoms that it wants to be shown by using a condition like this 
 ```
@@ -215,7 +215,7 @@ In the same way as with *%!trace* comments the user can define the set of atoms 
 
 The following is an example of how to use traces for generating custom natural language explanations of the conclusions of a program and how to use the value of the variables from a rule in the text of the traces.
 
-The following program describes how a person P can be ```innocent``` or sentenced to ```prison``` if he/she ```drive``` while being ```drunk``` (his/her blood alcohol content is over 30) or they ```resist``` authority.
+The following program describes how a person (P) can be ```innocent``` or sentenced to ```prison``` if they ```drive``` while being ```drunk``` (their blood alcohol content is over 30) or they ```resist``` authority.
 
 ```
 %%%%% examples/dont_drive_drunk.lp
@@ -261,17 +261,18 @@ sentence(P, prison) :-  punish(P).
 Answer: 1
 >> sentence(gabriel,prison)     [2]
   *
-  |__"gabriel has been sentenced to prison."
-  |  |__"gabriel has resisted to authority"
+  |__"gabriel has been sentenced to prison"
+  |  |__"gabriel has resisted authority"
 
   *
-  |__"gabriel has been sentenced to prison."
+  |__"gabriel has been sentenced to prison"
   |  |__"gabriel was driving"
-  |  |__"gabriel was drunk"
+  |  |__"gabriel BCA over 30"
 
 >> sentence(clare,innocent)     [1]
   *
   |__"clare is innocent."
+
 ```
 
 Note how the placeholder *%* inside the traces, is replaced by the value of the variables after solving. For example, in the previous example, you can see how the comment ```%!trace {"% has been sentenced to %",P,S} sentence(P,S) : S!=innocent.``` finally results in the trace *gabriel has been sentenced to prison.* when printing the explanations.
