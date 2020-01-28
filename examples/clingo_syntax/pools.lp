@@ -1,6 +1,11 @@
-% switch(s1;s2;s3).
 
-fired_1(s1;s2;s3).
+%!trace_rule {"this is a rule"}
+n(1).
 
-holds_switch(X) :- fired_1(X).
+ n(2).
+
+b(3). b(4).
+
+%!trace_rule {"n is %, b is %",X,Y}
+switch(-s1(X);s2(Y);s3(X)) :- n(X), b(Y).
 

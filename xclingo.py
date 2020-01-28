@@ -94,7 +94,6 @@ def build_causes(m, traces, fired_values, labels_dict, auto_tracing):
                         elif v['operator'] == clingo.ast.BinaryOperator.Division:
                             values.append(operators[0].number / operators[1].number)
 
-
                 fired_body.append(clingo.Function(name, values, positive))
 
             # Labels
@@ -136,6 +135,8 @@ def _fhead_from_theory_term(theory_term):
                 arguments.append(str(arg.arguments[0].number + arg.arguments[1].number))
             elif arg.name == "-" and len(arg.arguments) == 2:
                 arguments.append(str(arg.arguments[0].number - arg.arguments[1].number))
+            elif arg.name == "-" and len(arg.arguments) == 1:
+                arguments.append("-" + str(arg.arguments[0]))
             else:
                 arguments.append(str(arg))
         else:

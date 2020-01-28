@@ -1,6 +1,6 @@
 from collections import Iterable
 
-from clingo import Control, parse_program, ast
+from clingo import Control, parse_program, ast, Function
 import re
 from more_itertools import unique_everseen
 from clingo_utilities import body_variables
@@ -119,6 +119,12 @@ class XClingoAST():
 
     """XclingoAST methods"""
 
+    def is_pool_head(self):
+        return self.type == ast.ASTType.Rule \
+               and self['head'].type == ast.ASTType.Literal \
+               and self['head']['atom'].type == ast.ASTType.SymbolicAtom \
+               and self['head']['atom']['term'].type == ast.ASTType.Pool
+
     def is_constraint(self):
         """
         @return bool: True if the rule is a constraint, False if not.
@@ -196,7 +202,7 @@ def _translate_trace(program):
     @return str:
     """
                          # (%!trace \{(.*)\}[ ]*\n[ ]*(\-?[a-z][a-zA-Z]*(?:\((?:[\-a-zA-Z0-9+ \(\)\,\_])+\))?(?:[ ]*:-[ ]*.*)?).)
-    for hit in re.findall("(%!trace_rule \{(.*)\}[ ]*[\n ]*(\-?[_a-z][_a-zA-Z]*(?:\((?:[\-a-zA-Z0-9+ \(\)\,\_])+\))?)(?:[ ]*:-[ ]*(.*))?.)", program):
+    for hit in re.findall("(%!trace_rule \{(.*)\}[ ]*[\n ]*(\-?[_a-z][_a-zA-Z]*(?:\((?:[\-a-zA-Z0-9+; \(\)\,\_])+\))?)(?:[ ]*:-[ ]*(.*))?.)", program):
         # 0: original match  1: label parameters  2: head of the rule  3: body of the rule
         program = program.replace(
             hit[0],
@@ -312,6 +318,83 @@ def _translate_to_fired_holds(rule_ast, control, builder, t_option):
                 translated_rule = str(rule_ast['head']) + "."
 
             generated_rules = translated_rule + "\n"
+        elif rule_ast.is_pool_head():
+            # Generates a comment
+            comment = "%" + str(rule_ast)
+
+            # El cuerpo puede procesarse por separado (poner holds y encontrar labels)
+            label_body, rest_body = _separate_labels_from_body(rule_ast['body'])
+
+            body_trace = [(lit['atom']['term'].type != ast.ASTType.UnaryOperation,
+                              lit.get_function()['name'], lit.get_function()['arguments'])
+                             for lit in rest_body if
+                             lit.type == ast.ASTType.Literal and lit['atom'].type == ast.ASTType.SymbolicAtom and lit[
+                                 'sign'] == ast.Sign.NoSign]
+
+
+            for l in rest_body:
+                l.add_prefix('holds_')
+
+            # Initializing sentences
+            holds_rules = ""
+            label_rules = ""
+            fired_rules = ""
+
+            for term in rule_ast['head']['atom']['term']['arguments']:
+                t_function = term.get_function()
+
+                original_name = t_function['name']  # Save original name
+                rule_counter = control.count_rule()
+
+                # Una entrada en trace
+                fired_head_variables = list(map(str, t_function['arguments'])) + \
+                                       list(set(map(str, body_variables(rule_ast['body']))) - set(
+                                           map(str, t_function['arguments'])))
+
+                control.traces[rule_counter] = {
+                    'head': (term.type != ast.ASTType.UnaryOperation,
+                             str(t_function['name']), t_function['arguments']),
+                    'arguments': fired_head_variables,
+                    # 'body' contains pairs of function names and arguments found in the body
+                    'body': body_trace
+                }
+
+                # Un holds
+                holds_head_variables = [Function("Aux" + str(t_function['arguments'].index(v._internal_ast))) for v in t_function['arguments']]
+                holds_head = Function("holds_" + original_name,
+                                      holds_head_variables,
+                                      term.type != ast.ASTType.UnaryOperation)
+                holds_rules += "{head} :- fired_{rule_counter}({fired_arguments}).\n".format(
+                    head=holds_head,
+                    rule_counter=rule_counter,
+                    fired_arguments=",".join(["Aux" + str(i) for i in range(0, len(fired_head_variables))])
+                )
+
+                # Generates label rules
+                for label_ast in label_body:
+                    label_rules += "&trace{{{fired_id},{original_head},{label_parameters}}} :- {body}.\n".format(
+                        fired_id=str(rule_counter),
+                        original_head=str(term),
+                        label_parameters=",".join([str(e) for e in label_ast['atom']['elements']]),
+                        body="fired_{counter}{arguments}".format(
+                            counter=rule_counter,
+                            arguments="" if not fired_head_variables else "({})".format(",".join(fired_head_variables)))
+                    )
+
+                # Prepare name
+                t_function['name'] = "fired_{}".format(rule_counter)
+                t_function['arguments'] = [ast.Variable(t_function['arguments'][0]['location'], v)
+                                           for v in fired_head_variables]
+
+                # Build fired sentence
+                if rest_body:
+                    fired_rules += "{fired_head} :- {body}.\n".format(
+                        fired_head=term,
+                        body=",".join(map(str, rest_body)))
+                else:
+                    fired_rules += str(term) + ".\n"
+
+            generated_rules = comment + "\n" + fired_rules + "\n" + holds_rules + "\n" + label_rules
         else:  # Other cases
             rule_counter = control.count_rule()
 
