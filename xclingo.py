@@ -28,6 +28,43 @@ def build_fired_dict(m):
     return fired_values
 
 
+def replace_by_value(var_val, variables):
+    values = []
+    for v in variables:
+
+        if v.type == clingo.ast.ASTType.Variable:
+            values.append(var_val[str(v)])
+        elif v.type == clingo.ast.ASTType.Symbol:
+            if v['symbol'].type == clingo.SymbolType.Number:
+                values.append(int(str(v)))
+            else:
+                values.append(clingo.Function(v['symbol'].name, v['symbol'].arguments, v['symbol'].positive))
+        elif v.type == clingo.ast.ASTType.Function:
+
+            values.append(clingo.Function(
+                v['name'],
+                replace_by_value(var_val, v['arguments']))
+            )
+        elif v.type == clingo.ast.ASTType.BinaryOperation:
+            operators = []
+            for k in v.child_keys:
+                if v[k].type == clingo.ast.ASTType.Variable:
+                    operators.append(var_val[str(v[k])])
+                elif v[k].type == clingo.ast.ASTType.Symbol and v[k]['symbol'].type == clingo.SymbolType.Number:
+                    operators.append(v[k]['symbol'])
+
+            if v['operator'] == clingo.ast.BinaryOperator.Minus:
+                values.append(operators[0].number - operators[1].number)
+            elif v['operator'] == clingo.ast.BinaryOperator.Plus:
+                values.append(operators[0].number + operators[1].number)
+            elif v['operator'] == clingo.ast.BinaryOperator.Multiplication:
+                values.append(operators[0].number * operators[1].number)
+            elif v['operator'] == clingo.ast.BinaryOperator.Division:
+                values.append(operators[0].number / operators[1].number)
+
+    return values
+
+
 def build_causes(m, traces, fired_values, labels_dict, auto_tracing):
     """
     Builds a dictionary containing, for each fired atom in a model, the atoms (with values) that caused its derivation.
@@ -61,40 +98,7 @@ def build_causes(m, traces, fired_values, labels_dict, auto_tracing):
             # Computes fired_body
             fired_body = []
             for (positive, name, variables) in traces[fired_id]['body']:
-                values = []
-                for v in variables:
-
-                    if v.type == clingo.ast.ASTType.Variable:
-                        values.append(var_val[str(v)])
-                    elif v.type == clingo.ast.ASTType.Symbol:
-                        if v['symbol'].type == clingo.SymbolType.Number:
-                            values.append(int(str(v)))
-                        else:
-                            values.append(clingo.Function(v['symbol'].name, v['symbol'].arguments, v['symbol'].positive))
-                    elif v.type == clingo.ast.ASTType.Function:
-                        for a in v['arguments']:
-                            values.append(clingo.Function(
-                                v['name'],
-                                [clingo.Function(a['symbol'].name, a['symbol'].arguments) for a in v['arguments']])
-                            )
-                    elif v.type == clingo.ast.ASTType.BinaryOperation:
-                        operators = []
-                        for k in v.child_keys:
-                            if v[k].type == clingo.ast.ASTType.Variable:
-                                operators.append(var_val[str(v[k])])
-                            elif v[k].type == clingo.ast.ASTType.Symbol and v[k]['symbol'].type == clingo.SymbolType.Number:
-                                operators.append(v[k]['symbol'])
-
-                        if v['operator'] == clingo.ast.BinaryOperator.Minus:
-                            values.append(operators[0].number - operators[1].number)
-                        elif v['operator'] == clingo.ast.BinaryOperator.Plus:
-                            values.append(operators[0].number + operators[1].number)
-                        elif v['operator'] == clingo.ast.BinaryOperator.Multiplication:
-                            values.append(operators[0].number * operators[1].number)
-                        elif v['operator'] == clingo.ast.BinaryOperator.Division:
-                            values.append(operators[0].number / operators[1].number)
-
-
+                values = replace_by_value(var_val, variables)
                 fired_body.append(clingo.Function(name, values, positive))
 
             # Labels
