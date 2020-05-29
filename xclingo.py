@@ -28,7 +28,44 @@ def build_fired_dict(m):
     return fired_values
 
 
-def build_causes(m, traces, fired_values, labels_dict, auto_labelling):
+def replace_by_value(var_val, variables):
+    values = []
+    for v in variables:
+
+        if v.type == clingo.ast.ASTType.Variable:
+            values.append(var_val[str(v)])
+        elif v.type == clingo.ast.ASTType.Symbol:
+            if v['symbol'].type == clingo.SymbolType.Number:
+                values.append(int(str(v)))
+            else:
+                values.append(clingo.Function(v['symbol'].name, v['symbol'].arguments, v['symbol'].positive))
+        elif v.type == clingo.ast.ASTType.Function:
+
+            values.append(clingo.Function(
+                v['name'],
+                replace_by_value(var_val, v['arguments']))
+            )
+        elif v.type == clingo.ast.ASTType.BinaryOperation:
+            operators = []
+            for k in v.child_keys:
+                if v[k].type == clingo.ast.ASTType.Variable:
+                    operators.append(var_val[str(v[k])])
+                elif v[k].type == clingo.ast.ASTType.Symbol and v[k]['symbol'].type == clingo.SymbolType.Number:
+                    operators.append(v[k]['symbol'])
+
+            if v['operator'] == clingo.ast.BinaryOperator.Minus:
+                values.append(operators[0].number - operators[1].number)
+            elif v['operator'] == clingo.ast.BinaryOperator.Plus:
+                values.append(operators[0].number + operators[1].number)
+            elif v['operator'] == clingo.ast.BinaryOperator.Multiplication:
+                values.append(operators[0].number * operators[1].number)
+            elif v['operator'] == clingo.ast.BinaryOperator.Division:
+                values.append(operators[0].number / operators[1].number)
+
+    return values
+
+
+def build_causes(m, traces, fired_values, labels_dict, auto_tracing):
     """
     Builds a dictionary containing, for each fired atom in a model, the atoms (with values) that caused its derivation.
     It performs this crossing the info in 'traces' and 'fired_values'
@@ -36,7 +73,7 @@ def build_causes(m, traces, fired_values, labels_dict, auto_labelling):
     @param Dict traces: a dictionary (indexed by fired id) containing the head and the body of the original rules.
     @param Dict fired_values: a dictionary (indexed by fired id) that contains the fired values in a model.
     @param Dict labels_dict: a dictionary (indexed by atom with values) that contains their processed labels.
-    @param str auto_labelling: string constant chosen by the user. Options are:
+    @param str auto_tracing: string constant chosen by the user. Options are:
                 - none : atoms and rules just have the labels found on the original program.
                 - facts : rules with empty body must be additionally labeled with a string version of its head.
                 - all : every rule must be additionally labeled with a string version of its head.
@@ -61,40 +98,7 @@ def build_causes(m, traces, fired_values, labels_dict, auto_labelling):
             # Computes fired_body
             fired_body = []
             for (positive, name, variables) in traces[fired_id]['body']:
-                values = []
-                for v in variables:
-
-                    if v.type == clingo.ast.ASTType.Variable:
-                        values.append(var_val[str(v)])
-                    elif v.type == clingo.ast.ASTType.Symbol:
-                        if v['symbol'].type == clingo.SymbolType.Number:
-                            values.append(int(str(v)))
-                        else:
-                            values.append(clingo.Function(v['symbol'].name, v['symbol'].arguments, v['symbol'].positive))
-                    elif v.type == clingo.ast.ASTType.Function:
-                        for a in v['arguments']:
-                            values.append(clingo.Function(
-                                v['name'],
-                                [clingo.Function(a['symbol'].name, a['symbol'].arguments) for a in v['arguments']])
-                            )
-                    elif v.type == clingo.ast.ASTType.BinaryOperation:
-                        operators = []
-                        for k in v.child_keys:
-                            if v[k].type == clingo.ast.ASTType.Variable:
-                                operators.append(var_val[str(v[k])])
-                            elif v[k].type == clingo.ast.ASTType.Symbol and v[k]['symbol'].type == clingo.SymbolType.Number:
-                                operators.append(v[k]['symbol'])
-
-                        if v['operator'] == clingo.ast.BinaryOperator.Minus:
-                            values.append(operators[0].number - operators[1].number)
-                        elif v['operator'] == clingo.ast.BinaryOperator.Plus:
-                            values.append(operators[0].number + operators[1].number)
-                        elif v['operator'] == clingo.ast.BinaryOperator.Multiplication:
-                            values.append(operators[0].number * operators[1].number)
-                        elif v['operator'] == clingo.ast.BinaryOperator.Division:
-                            values.append(operators[0].number / operators[1].number)
-
-
+                values = replace_by_value(var_val, variables)
                 fired_body.append(clingo.Function(name, values, positive))
 
             # Labels
@@ -107,7 +111,7 @@ def build_causes(m, traces, fired_values, labels_dict, auto_labelling):
                 if m.is_true(lit):
                     labels.append(label)
 
-            if (auto_labelling == "all" or (auto_labelling == "facts" and fired_body == [])) and labels == []:  # Auto-labelling labels
+            if (auto_tracing == "all" or (auto_tracing == "facts" and fired_body == [])) and labels == []:  # Auto-labelling labels
                 labels.append(str(head))
 
             causes.append(
@@ -223,10 +227,8 @@ def _build_explanations(atom, causes, stack):
                 # This prevents the function to fall in an infinite loop of calls
                 if a in stack:
                     continue
-                else:
-                    stack.append(a)
 
-                a_explanations = _build_explanations(a, causes, stack)
+                a_explanations = _build_explanations(a, causes, stack + [a])
 
                 # Initialize with empty explanation if there is nothing yet
                 if not alt_rule_explanations:
@@ -298,9 +300,9 @@ def main():
     # Handles arguments of xclingo
     parser = argparse.ArgumentParser(description='Tool for debugging and explaining ASP programs')
     parser.add_argument('--debug-level', type=str, choices=["none", "magic-comments", "translation", "causes"], default="none",
-                        help="Points out the debugging level.")
-    parser.add_argument('--auto-labelling', type=str, choices=["none", "facts", "all"], default="none",
-                        help="Automatically creates labels for the rules of the program. Default: none.")
+                        help="Points out the debugging level. Default: none.")
+    parser.add_argument('--auto-tracing', type=str, choices=["none", "facts", "all"], default="none",
+                        help="Automatically creates traces for the rules of the program. Default: none.")
     #parser.add_argument('n_sol', nargs='?', type=int, default=0, help="Number of solutions")
     parser.add_argument('infile', nargs='+', type=argparse.FileType('r'), default=sys.stdin, help="ASP program")
     args = parser.parse_args()
@@ -326,7 +328,7 @@ def main():
             sol_n += 1
             print("Answer: " + str(sol_n))
 
-            causes = build_causes(m, control.traces, build_fired_dict(m), general_labels_dict, args.auto_labelling)
+            causes = build_causes(m, control.traces, build_fired_dict(m), general_labels_dict, args.auto_tracing)
 
             if args.debug_level == "causes":
                 print(general_labels_dict)
@@ -344,7 +346,7 @@ def main():
                 print("Any show_all rule was activated.")
                 atoms_to_explain = []
             else:   # If there is not show_all rules then explain everything in the model.
-                atoms_to_explain = causes['fired_head']
+                atoms_to_explain = causes['fired_head'].unique()
 
             for a in atoms_to_explain:
                 print(">> {}".format(a), end='')
