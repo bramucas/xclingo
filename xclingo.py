@@ -304,7 +304,7 @@ def main():
     parser.add_argument('--auto-tracing', type=str, choices=["none", "facts", "all"], default="none",
                         help="Automatically creates traces for the rules of the program. Default: none.")
     #parser.add_argument('n_sol', nargs='?', type=int, default=0, help="Number of solutions")
-    parser.add_argument('-n', default=0, type=int, help="Number of answer sets.")
+    parser.add_argument('-n', default=1, type=int, help="Number of answer sets.")
     parser.add_argument('infile', nargs='+', type=argparse.FileType('r'), default=sys.stdin, help="ASP program")
     args = parser.parse_args()
 
