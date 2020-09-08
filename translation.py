@@ -376,6 +376,10 @@ def _translate_to_fired_holds(rule_ast, control, builder, t_option):
 
         _add_to_base(generated_rules, builder, t_option)
 
+    else:
+        if rule_ast.type == ast.ASTType.Definition:
+            _add_to_base(str(rule_ast), builder, t_option)
+
 
 def prepare_xclingo_program(clingo_arguments, original_program, debug_level):
     control = XClingoProgramControl(clingo_arguments)
