@@ -3,7 +3,7 @@ from collections import Iterable
 from clingo import Control, parse_program, ast, Function
 import re
 from more_itertools import unique_everseen
-from clingo_utilities import body_variables
+from clingo_utilities import find_variables
 
 
 class XClingoProgramControl(Control):
@@ -405,8 +405,7 @@ def _translate_to_fired_holds(rule_ast, control, builder, t_option):
 
             # Keep trace of head, arguments and body of the rules using rule_counter
             fired_head_variables = list(map(str, head_function['arguments'])) + \
-                                   list(set(map(str, body_variables(rule_ast['body']))) - set(map(str, head_function['arguments'])))
-
+                                   list(set(map(str, find_variables([ast['atom'] for ast in rule_ast['body']]))) - set(map(str, head_function['arguments'])))
 
             control.traces[rule_counter] = {
                 'head': (rule_ast['head']['atom']['term'].type != ast.ASTType.UnaryOperation,
@@ -459,6 +458,10 @@ def _translate_to_fired_holds(rule_ast, control, builder, t_option):
             generated_rules = comment + "\n" + fired_rule + "\n" + holds_rule + "\n" + label_rules
 
         _add_to_base(generated_rules, builder, t_option)
+
+    else:
+        if rule_ast.type == ast.ASTType.Definition:
+            _add_to_base(str(rule_ast), builder, t_option)
 
 
 def prepare_xclingo_program(clingo_arguments, original_program, debug_level):
