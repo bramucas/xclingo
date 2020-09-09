@@ -6,19 +6,19 @@ domain(relay,ok). domain(relay,broken).
 
 
 %!trace_rule {"The relayline is off at %",T}
-h(relayline,off,T) :- h(relay,broken,T), time(T).
+c(relayline,off,T) :- h(relay,broken,T), time(T).
 
 %!trace_rule {"The light is off at %",T}
-h(light,off,T)     :- h(bulb,broken,T), time(T).
+c(light,off,T)     :- h(bulb,broken,T), time(T).
 
 %!trace_rule {"The bulb has been damaged at %",T}
-  h(bulb,broken,T) :- o(break,T), time(T),T>0.
+  c(bulb,broken,T) :- o(break,T), time(T),T>0.
 
 %!trace_rule {"The relay has been damaged at %",T}
-  h(relay,broken,T) :- o(surge,T), time(T),T>0.
+  c(relay,broken,T) :- o(surge,T), time(T),T>0.
 
 %!trace_rule {"The bulb has been damaged at %",T}
-  h(bulb,broken,T) :- o(surge,T), not h(protect,on,T-1), time(T),T>0.
+  c(bulb,broken,T) :- o(surge,T), not h(protect,on,T-1), time(T),T>0.
 
 % Something happening actually occurs
   o(A,I) :- obs_o(A,I), time(T),T>0.
@@ -35,7 +35,4 @@ h(light,off,T)     :- h(bulb,broken,T), time(T).
   o(Z,T) :- time(T),T>0, exog(Z), not -o(Z,T).
   -o(Z,T) :- time(T),T>0, exog(Z), not o(Z,T).
 
-%!show_trace h(light,V,1).
-%!show_trace h(relayline,V,1).
 
-%!trace {"% was initially %",F,V} h(F,V,0).
