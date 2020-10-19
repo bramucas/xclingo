@@ -296,6 +296,53 @@ def ascii_tree_explanation(explanation):
     return _ascii_tree_explanation(explanation, 0)
 
 
+def explain_program(original_program, n, debug_level, auto_tracing):
+    # Prepares the original program and obtain an XClingoControl
+    # TODO: why some trace_alls are duplicating answer sets? patch: --project
+    control = translation.prepare_xclingo_program([f'-n {n}', "--project"], original_program, debug_level)
+
+    control.ground([("base", [])])
+
+    # Constructs labels
+    general_labels_dict = build_labels_dict(control)
+
+    explanations = ""
+
+    # Solves and prints explanations
+    with control.solve(yield_=True) as it:
+        sol_n = 0
+        for m in it:
+            sol_n += 1
+            explanations += f'Answer: {sol_n}\n'
+
+            causes = build_causes(m, control.traces, build_fired_dict(m), general_labels_dict, auto_tracing)
+
+            if debug_level == "causes":
+                explanations += f'{general_labels_dict}\n{causes.to_string()}\n\n'
+                continue
+
+            # atoms_to_explain stores the atom that have to be explained for the current model.
+            fired_show_all = [remove_prefix("show_all_", a) for a in find_and_remove_by_prefix(m, 'show_all_')]
+            for s in [remove_prefix("nshow_all_", a) for a in find_and_remove_by_prefix(m, 'nshow_all_')]:
+                fired_show_all.append(clingo.Function(s.name, s.arguments, False))
+
+            if control.have_explain and fired_show_all:
+                atoms_to_explain = [a for a in causes['fired_head'].unique() if a in fired_show_all]
+            elif control.have_explain and not fired_show_all:
+                explanations += f'Any show_all rule was activated.\n'
+                atoms_to_explain = []
+            else:  # If there is not show_all rules then explain everything in the model.
+                atoms_to_explain = causes['fired_head'].unique()
+
+            explanations += "\n".join([
+                ">> {a}\t[{n_expls}]\n{joint_expls}".format(
+                    a=a, n_expls=len(expls), joint_expls="\n".join(ascii_tree_explanation(e) for e in expls)
+                )
+                for a, expls in [(a, build_explanations(a, causes)) for a in atoms_to_explain]]
+            )
+    return explanations
+
+
 def main():
     # Handles arguments of xclingo
     parser = argparse.ArgumentParser(description='Tool for debugging and explaining ASP programs')
@@ -313,50 +360,8 @@ def main():
     for file in args.infile:
         original_program += file.read()
 
-    # Prepares the original program and obtain an XClingoControl
-    # TODO: why some trace_alls are duplicating answer sets? patch: --project
-    control = translation.prepare_xclingo_program([f'-n {args.n}', "--project"], original_program, args.debug_level)
+    print(explain_program(original_program, args.n, args.debug_level, args.auto_tracing))
 
-    control.ground([("base", [])])
-
-    # Constructs labels
-    general_labels_dict = build_labels_dict(control)
-
-    # Solves and prints explanations
-    with control.solve(yield_=True) as it:
-        sol_n = 0
-        for m in it:
-            sol_n += 1
-            print("Answer: " + str(sol_n))
-
-            causes = build_causes(m, control.traces, build_fired_dict(m), general_labels_dict, args.auto_tracing)
-
-            if args.debug_level == "causes":
-                print(general_labels_dict)
-                print(causes.to_string(), end="\n\n")
-                continue
-
-            # atoms_to_explain stores the atom that have to be explained for the current model.
-            fired_show_all = [remove_prefix("show_all_", a) for a in find_and_remove_by_prefix(m, 'show_all_')]
-            for s in [remove_prefix("nshow_all_", a) for a in find_and_remove_by_prefix(m, 'nshow_all_')]:
-                fired_show_all.append(clingo.Function(s.name, s.arguments, False))
-
-            if control.have_explain and fired_show_all:
-                atoms_to_explain = [a for a in causes['fired_head'].unique() if a in fired_show_all]
-            elif control.have_explain and not fired_show_all:
-                print("Any show_all rule was activated.")
-                atoms_to_explain = []
-            else:   # If there is not show_all rules then explain everything in the model.
-                atoms_to_explain = causes['fired_head'].unique()
-
-            for a in atoms_to_explain:
-                print(">> {}".format(a), end='')
-                a_explanations = build_explanations(a, causes)
-                print("\t[{}]".format(len(a_explanations)))
-                for e in a_explanations:
-                    print(ascii_tree_explanation(e))
-
-            print()
 
 if __name__ == "__main__":
     main()
