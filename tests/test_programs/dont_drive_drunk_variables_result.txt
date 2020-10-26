@@ -33,4 +33,3 @@ Answer: 1
 >> sentence(clare,innocent)	[1]
   *
   |__"clare is innocent."
-

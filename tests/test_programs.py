@@ -20,4 +20,8 @@ def test_programs():
     p_names = [f_name.replace(".lp", "") for f_name in listdir(TEST_PROGRAMS_DIR) if search(r'.+\.lp', f_name)]
     for p_name in p_names:
         program_path, result_path = get_program_paths(p_name)
-        assert Path(result_path).read_text().replace("\n", "") == explain_program(Path(program_path).read_text(), 0, "none", "none").replace("\n", "")
+        try:
+            assert Path(result_path).read_text().replace("\n", "") == explain_program(Path(program_path).read_text(), 0, "none", "none").replace("\n", "")
+        except AssertionError as e:
+            print(f'[TEST PROGRAM FAILED] "{p_name}"')
+            raise e
