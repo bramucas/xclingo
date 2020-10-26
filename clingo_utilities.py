@@ -1,6 +1,5 @@
 import clingo
 
-
 def find_by_prefix(model, prefix):
     """
     @param clingo.Model model:
@@ -76,3 +75,16 @@ def remove_prefix(prefix, ast):
         term['name'] = term['name'].replace(prefix, "")
 
     return ast
+
+
+def solve_operations(values):
+    solved = []
+    for value in values:
+        if value.type == clingo.TheoryTermType.Function:
+            if value.name == "+" and len(value.arguments) == 2:
+                solved.append(str(value.arguments[0].number + value.arguments[1].number))
+            elif value.name == "-" and len(value.arguments) == 2:
+                solved.append(str(value.arguments[0].number - value.arguments[1].number))
+        else:
+            solved.append(str(value))
+    return solved
