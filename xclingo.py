@@ -110,7 +110,7 @@ def build_causes(m, traces, fired_values, labels_dict, auto_tracing):
             if (auto_tracing == "all" or (auto_tracing == "facts" and fired_body == [])) and rule_labels == []:
                 rule_labels.add(str(head))
 
-            rule_cause = FiredRule(fired_id, rule_labels, lazy_causes(causes, fired_body))
+            rule_cause = FiredRule(fired_id, labels=rule_labels, causes_dict=causes, clingo_atoms=fired_body)
             try:
                 causes[head].add_alternative_cause(rule_cause)
             except KeyError:
@@ -120,11 +120,6 @@ def build_causes(m, traces, fired_values, labels_dict, auto_tracing):
                     {rule_cause})
 
     return causes
-
-
-def lazy_causes(causes, fired_body):
-    for lit in fired_body:
-        yield causes[lit]
 
 
 def _fhead_from_theory_term(theory_term):

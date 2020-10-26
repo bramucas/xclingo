@@ -53,20 +53,28 @@ class FiredAtom:
 
 class FiredRule:
 
-    def __init__(self, fired_id, labels=set(), joint_causes=set()):
+    def __init__(self, fired_id, labels=set(), joint_causes=set(), causes_dict=None, clingo_atoms=None):
+        if (causes_dict is None) != (clingo_atoms is None):
+            raise RuntimeError("When lazy initializing FiredRule both 'cause_dict' and "
+                               "'clingo_atoms' parameters must be provided")
         self.fired_id = fired_id
         self.labels = labels
-        self.joint_causes = joint_causes
+        if causes_dict and clingo_atoms:
+            setattr(self, "_causes_dict", causes_dict)
+            setattr(self, "_clingo_atoms", clingo_atoms)
+        else:
+            setattr(self, "_joint_causes", joint_causes)
 
     @property
     def joint_causes(self):
-        if not hasattr(self, "_joint_causes"):
-            setattr(self, "_joint_causes", set(self.__joint_causes))
+        if hasattr(self, "_causes_dict") and hasattr(self, "_clingo_atoms"):
+            try:
+                setattr(self, "_joint_causes", set([self._causes_dict[lit] for lit in self._clingo_atoms]))
+            except KeyError as ke:
+                raise RuntimeError(f'Failing when accessing provided causes_dict: {ke}')
+            delattr(self, "_causes_dict")
+            delattr(self, "_clingo_atoms")
         return self._joint_causes
-
-    @joint_causes.setter
-    def joint_causes(self, joint_causes):
-        self.__joint_causes = joint_causes
 
 
 class Label:
