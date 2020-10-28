@@ -44,6 +44,9 @@ class FiredAtom:
             if self.expanded_explanations else "\t1"
         )
 
+    def dict_explanation(self):
+        return [e.as_label_dict() for e in self.expanded_explanations]
+
     def is_fact(self):
         return len([jc for ac in self.alternative_causes for jc in ac.joint_causes]) == 0
 
@@ -79,10 +82,10 @@ class FiredRule:
 
 class Label:
 
-    def __init__(self, text=None, values=None):
+    def __init__(self, text, values=[], placeholder="%"):
         self.text = text
         self.values = values
-        self.placeholder = '%'
+        self.placeholder = placeholder
 
     def replace_values(self):
         processed_label = self.text
@@ -93,12 +96,10 @@ class Label:
     def __str__(self):
         return self.replace_values()
 
-    __repr__ = __str__
-
 
 class ExpandedExplanation:
 
-    def __init__(self, node, child=None):
+    def __init__(self, node, child=set()):
         """
 
         @param Label node:
@@ -107,6 +108,14 @@ class ExpandedExplanation:
         self.node = node
         self.child = child
 
+    @classmethod
+    def from_dict(cls, d):
+        for label_text, sub_d in d.items():
+            return cls(
+                Label(label_text),
+                {cls.from_dict({k: v}) for k, v in sub_d.items()}
+            )
+
     def ascii_tree(self, level=0):
         return "{root}{branch}{node}{child}".format(
             root="  *\n" if level==0 else "",
@@ -114,3 +123,41 @@ class ExpandedExplanation:
             node=self.node.replace_values(),
             child="\n" + "\n".join([c.ascii_tree(level=level+1) for c in self.child]) if self.child else ""
         )
+
+    def as_label_dict(self):
+        subtree = {}
+        for c in self.child:
+            subtree.update(c.as_label_dict())
+        return {self.node.replace_values(): subtree}
+
+    def is_equal(self, other):
+        if self.node.replace_values() != other.replace_values():
+            return False
+
+        for c in self.child:
+            found = False
+            for oc in other.child:
+                if c.is_equal(oc):
+                    found = True
+            if not found:
+                return False
+
+        return True
+
+
+class Solution:
+
+    def __init__(self, number, fired_atoms=set(), atoms_to_explain=set()):
+        self.number = number
+        self.fired_atoms = fired_atoms
+        self.atoms_to_explain = atoms_to_explain
+
+    def text_explanations(self):
+        return "Answer: {sol_number}\n{explanations}".format(
+                    sol_number=self.number,
+                    explanations="\n\n".join(self.fired_atoms[a].text_explanation(include_header=True)
+                                             for a in self.atoms_to_explain)
+                )
+
+    def dict_explanations(self):
+        return {str(a): self.fired_atoms[a].dict_explanation() for a in self.atoms_to_explain}

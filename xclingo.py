@@ -2,7 +2,7 @@ import sys
 import argparse
 import clingo
 
-from causes import FiredAtom, FiredRule, Label
+from causes import FiredAtom, FiredRule, Label, Solution
 from clingo_utilities import find_by_prefix, remove_prefix, find_and_remove_by_prefix, solve_operations
 import old_implementation
 
@@ -107,7 +107,7 @@ def build_causes(m, traces, fired_values, labels_dict, auto_tracing):
                 if m.is_true(lit):
                     rule_labels.add(label)
             # Auto-labelling labels
-            if (auto_tracing == "all" or (auto_tracing == "facts" and fired_body == [])) and rule_labels == []:
+            if (auto_tracing == "all" or (auto_tracing == "facts" and not fired_body)) and not rule_labels:
                 rule_labels.add(str(head))
 
             rule_cause = FiredRule(fired_id, labels=rule_labels, causes_dict=causes, clingo_atoms=fired_body)
@@ -151,6 +151,14 @@ def _fhead_from_theory_term(theory_term):
     return fired_head
 
 
+def find_atoms_to_explain(m, fired_atoms):
+    fired_show_all = [remove_prefix("show_all_", a) for a in find_and_remove_by_prefix(m, 'show_all_')]
+    for s in [remove_prefix("nshow_all_", a) for a in find_and_remove_by_prefix(m, 'nshow_all_')]:
+        fired_show_all.append(clingo.Function(s.name, s.arguments, False))
+
+    return fired_show_all if fired_show_all else fired_atoms.keys()
+
+
 def build_labels_dict(c_control):
     """
     Constructs a dictionary with the processed labels for the program indexed by fired_id or the str version of an atom.
@@ -185,42 +193,37 @@ def build_labels_dict(c_control):
     return labels_dict
 
 
-def explain_program(original_program, n, debug_level, auto_tracing):
+def explain_program(original_program, n, debug_level, auto_tracing, format):
     control = translation.prepare_xclingo_program([f'-n {n}', "--project"], original_program, debug_level)
     control.ground([("base", [])])
 
     # Constructs labels
     general_labels_dict = build_labels_dict(control)
 
-    explanations = ""
-
     # Solves and prints explanations
     with control.solve(yield_=True) as it:
         sol_n = 0
+        if format == "text":
+            explanations = ""
+        elif format == "dict":
+            explanations = dict()
         for m in it:
             sol_n += 1
-            explanations += f'Answer: {sol_n}\n'
 
-            causes = build_causes(m, control.traces, build_fired_dict(m), general_labels_dict, auto_tracing)
+            fired_atoms = build_causes(m, control.traces, build_fired_dict(m), general_labels_dict, auto_tracing)
 
             if debug_level == "causes":
-                explanations += f'{general_labels_dict}\n{causes}\n\n'
+                print(f'{general_labels_dict}\n{fired_atoms}\n\n')
                 continue
 
-            # atoms_to_explain stores the atom that have to be explained for the current model.
-            fired_show_all = [remove_prefix("show_all_", a) for a in find_and_remove_by_prefix(m, 'show_all_')]
-            for s in [remove_prefix("nshow_all_", a) for a in find_and_remove_by_prefix(m, 'nshow_all_')]:
-                fired_show_all.append(clingo.Function(s.name, s.arguments, False))
+            atoms_to_explain = find_atoms_to_explain(m, fired_atoms)
 
-            if control.have_explain and fired_show_all:
-                atoms_to_explain = fired_show_all
-            elif control.have_explain and not fired_show_all:
-                explanations += f'Any show_all rule was activated.\n'
-                atoms_to_explain = []
-            else:  # If there is not show_all rules then explain everything in the model.
-                atoms_to_explain = causes.keys()
+            s = Solution(sol_n, fired_atoms, atoms_to_explain)
 
-            explanations += "\n\n".join(causes[a].text_explanation(include_header=True) for a in atoms_to_explain)
+            if format == "text":
+                explanations += s.text_explanations()
+            elif format == "dict":
+                explanations[sol_n] = s.dict_explanations()
 
     return explanations
 
@@ -235,6 +238,8 @@ def main():
     parser.add_argument('--imp', type=str, choices=["old", "new"],
                         default="new",
                         help="Warning: development option.")
+    parser.add_argument('--format', type=str, choices=["text", "dict"], default="text",
+                        help="Specifies the output format.")
     parser.add_argument('-n', default=1, type=int, help="Number of answer sets.")
     parser.add_argument('infile', nargs='+', type=argparse.FileType('r'), default=sys.stdin, help="ASP program")
     args = parser.parse_args()
@@ -246,7 +251,7 @@ def main():
 
     explain_func = explain_program if args.imp == "new" else old_implementation.explain_program_old
 
-    print(explain_func(original_program, args.n, args.debug_level, args.auto_tracing))
+    print(explain_func(original_program, args.n, args.debug_level, args.auto_tracing, args.format))
 
 
 if __name__ == "__main__":

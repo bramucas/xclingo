@@ -1,0 +1,1 @@
+{1: {'sentence(gabriel,prison)': [{'"gabriel has been sentenced to prison"': {'"gabriel has driven drunk"': {'"gabriel has driven"': {}, '"gabriel was drunk"': {}}}}, {'"gabriel has been sentenced to prison"': {'"gabriel has resisted to authority"': {}}}], 'sentence(clare,innocent)': [{'"clare is innocent."': {}}]}}

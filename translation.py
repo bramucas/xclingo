@@ -1,8 +1,5 @@
-from collections import Iterable
-
 from clingo import Control, parse_program, ast
 import re
-from more_itertools import unique_everseen
 from clingo_utilities import find_variables
 
 
@@ -410,7 +407,6 @@ def prepare_xclingo_program(clingo_arguments, original_program, debug_level):
                             }; 
                             &trace/0: t, any}.""",
                       lambda ast_object: builder.add(ast_object))
-        print()
         parse_program("""#program base. 
                         #theory trace_all {
                             t { 
