@@ -120,7 +120,7 @@ def build_labels_dict_old(c_control):
     return labels_dict
 
 
-def explain_program_old(original_program, n, debug_level, auto_tracing):
+def explain_program_old(original_program, n, debug_level, auto_tracing, output_format):
     # Prepares the original program and obtain an XClingoControl
     # TODO: why some trace_alls are duplicating answer sets? patch: --project
     control = translation.prepare_xclingo_program([f'-n {n}', "--project"], original_program, debug_level)
