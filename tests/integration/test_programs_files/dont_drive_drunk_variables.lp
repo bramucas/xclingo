@@ -6,7 +6,7 @@ drive(gabriel).
 resist(gabriel).
 alcohol(gabriel, 40).
 
-%!trace {"% has driven",P} drive(P).
+%!trace {"% has driven a car",P} drive(P).
 %!trace {"% was drunk",P} alcohol(P,A):A>30.
 
 drive(clare).
@@ -24,6 +24,10 @@ sentence(P, prison) :-  punish(P).
     sentence(P, innocent) :- person(P), not sentence(P, prison).
 
 %%%% labels
+%!trace {"% was driving",P} drive(P).
+%!trace {"% BCA over 30",P} alcohol(P,A) : A>30.
+%!trace {"% has resisted authority",P} resist(P).
+%!trace {"% has not resisted to authority",P} -resist(P).
 %!trace {"% has been sentenced to %",P,S} sentence(P,S) : S!=innocent.
 
 %!show_trace sentence(P, X).  % Explain all sentences

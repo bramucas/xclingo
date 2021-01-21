@@ -1,6 +1,5 @@
 import clingo
 
-
 def find_by_prefix(model, prefix):
     """
     @param clingo.Model model:
@@ -27,30 +26,34 @@ def find_and_remove_by_prefix(model, prefix):
     return hits
 
 
-def body_variables(body_asts):
+def find_variables(ast_list):
     """
     @param List[clingo.rule_ast.AST] body_asts:
     @return List[clingo.rule_ast.AST]: list containing the ASTs of the variables used in the body.
     """
     vars = []
 
-    for ast in body_asts:
-        if ast['atom'].type == clingo.ast.ASTType.SymbolicAtom:
+    for ast in ast_list:
+        if ast.type == clingo.ast.ASTType.SymbolicAtom:
 
-            if (ast['atom']['term'].type == clingo.ast.ASTType.UnaryOperation
-                    and ast['atom']['term']['operator'] == clingo.ast.UnaryOperator.Minus):
-                arguments = ast['atom']['term']['argument']['arguments']
+            if (ast['term'].type == clingo.ast.ASTType.UnaryOperation
+                    and ast['term']['operator'] == clingo.ast.UnaryOperator.Minus):
+                arguments = ast['term']['argument']['arguments']
             else:
-                arguments = ast['atom']['term']['arguments']
+                arguments = ast['term']['arguments']
 
             for a in arguments:
                 if a.type == clingo.ast.ASTType.Variable:
                     vars.append(a)
-        elif ast['atom'].type == clingo.ast.ASTType.Comparison:
-            if ast['atom']['left'].type == clingo.ast.ASTType.Variable:
-                vars.append(ast['atom']['left'])
-            if ast['atom']['right'].type == clingo.ast.ASTType.Variable:
-                vars.append(ast['atom']['right'])
+                if a.type == clingo.ast.ASTType.Function:
+                    vars.extend(find_variables(a['arguments']))
+        elif ast.type == clingo.ast.ASTType.Comparison:
+            if ast['left'].type == clingo.ast.ASTType.Variable:
+                vars.append(ast['left'])
+            if ast['right'].type == clingo.ast.ASTType.Variable:
+                vars.append(ast['right'])
+        elif ast.type == clingo.ast.ASTType.Variable:
+            vars.append(ast)
 
     return vars
 
@@ -72,3 +75,16 @@ def remove_prefix(prefix, ast):
         term['name'] = term['name'].replace(prefix, "")
 
     return ast
+
+
+def solve_operations(values):
+    solved = []
+    for value in values:
+        if value.type == clingo.TheoryTermType.Function:
+            if value.name == "+" and len(value.arguments) == 2:
+                solved.append(str(value.arguments[0].number + value.arguments[1].number))
+            elif value.name == "-" and len(value.arguments) == 2:
+                solved.append(str(value.arguments[0].number - value.arguments[1].number))
+        else:
+            solved.append(str(value))
+    return solved
