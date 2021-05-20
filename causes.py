@@ -3,7 +3,7 @@ from itertools import product as itertools_product
 
 class FiredAtom:
 
-    def __init__(self, atom, atom_labels=set(), alternative_causes=set()):
+    def __init__(self, atom, atom_labels=list(), alternative_causes=list()):
         self.atom = atom
         self.atom_labels = atom_labels
         self.alternative_causes = alternative_causes
@@ -11,7 +11,7 @@ class FiredAtom:
     def add_alternative_cause(self, cause):
         if type(cause) != FiredRule:
             raise TypeError("Value is not a Cause class instance!")
-        self.alternative_causes.add(cause)
+        self.alternative_causes.append(cause)
 
     @property
     def expanded_explanations(self):
@@ -31,26 +31,35 @@ class FiredAtom:
         @return Explanation:
         """
         def decide_instantiation(labels, caused_bys):
+            """
+            
+            """
             if labels:
                 if caused_bys:
-                    return Disjunction({CausedBy(lab, c) for lab, c in itertools_product(labels, caused_bys)}) if len(labels) > 1 else CausedBy(labels.pop(), Disjunction(caused_bys) if len(caused_bys) > 1 else caused_bys.pop())
+                    if len(labels)>1:
+                        return Disjunction({CausedBy(lab, c) for lab, c in itertools_product(labels, caused_bys)})
+                    else:
+                        return CausedBy(labels[-1], Disjunction(caused_bys) if len(caused_bys) > 1 else caused_bys[-1])
                 else:
-                    return Disjunction({CausedBy(lab) for lab in labels}) if len(labels) > 1 else CausedBy(labels.pop())
+                    return Disjunction({CausedBy(lab) for lab in labels}) if len(labels) > 1 else CausedBy(labels[-1])
             else:
                 return Disjunction(caused_bys) if caused_bys else Fact()
-
-        all_labels = self.atom_labels
-        all_caused_bys = set()
+      
         if self.is_fact():
-            all_labels = all_labels.union({rl for ac in self.alternative_causes for rl in ac.labels if rl})
+            return decide_instantiation(
+                self.atom_labels+[rl for ac in self.alternative_causes for rl in ac.labels if rl],
+                []
+            )
         else:
-            for ac in self.alternative_causes:
-                all_labels = all_labels.union(ac.labels)
-                if ac.joint_causes:
-                    all_caused_bys.add(ac.joint_causes.pop().explanation if len(ac.joint_causes) == 1
-                                   else Conjunction({jc.explanation for jc in ac.joint_causes}))
-
-        return decide_instantiation(all_labels, all_caused_bys)
+            causes = set()
+            for ac in self.alternative_causes:                
+                causes.add(decide_instantiation(
+                    self.atom_labels+ac.labels,
+                    [] if not ac.joint_causes else 
+                    [ac.joint_causes[-1].explanation] if len(ac.joint_causes) == 1
+                    else [Conjunction({jc.explanation for jc in ac.joint_causes})]
+                ))
+            return Disjunction(causes)
 
     def text_explanation(self, include_header=False):
         return "{header}\n{explanations}".format(
@@ -71,7 +80,7 @@ class FiredAtom:
 
 class FiredRule:
 
-    def __init__(self, fired_id, labels=set(), joint_causes=set(), causes_dict=None, clingo_atoms=None):
+    def __init__(self, fired_id, labels=list(), joint_causes=list(), causes_dict=None, clingo_atoms=None):
         if (causes_dict is None) != (clingo_atoms is None):
             raise RuntimeError("When lazy initializing FiredRule both 'cause_dict' and "
                                "'clingo_atoms' parameters must be provided")
@@ -87,7 +96,7 @@ class FiredRule:
     def joint_causes(self):
         if hasattr(self, "_causes_dict") and hasattr(self, "_clingo_atoms"):
             try:
-                setattr(self, "_joint_causes", set([self._causes_dict[lit] for lit in self._clingo_atoms]))
+                setattr(self, "_joint_causes", list([self._causes_dict[lit] for lit in self._clingo_atoms]))
             except KeyError as ke:
                 raise RuntimeError(f'Failing when accessing provided causes_dict: {ke}')
             delattr(self, "_causes_dict")

@@ -100,15 +100,15 @@ def build_causes(m, traces, fired_values, labels_dict, auto_tracing):
                 values = replace_by_value(var_val, variables)
                 fired_body.add(clingo.Function(name, values, positive))
 
-            rule_labels = set()
+            rule_labels = list()
             # labels from 'trace'
             if int(fired_id) in labels_dict and str(head) in labels_dict[int(fired_id)]:
                 lit, label = labels_dict[int(fired_id)][str(head)]
                 if m.is_true(lit):
-                    rule_labels.add(label)
+                    rule_labels.append(label)
             # Auto-labelling labels
             if (auto_tracing == "all" or (auto_tracing == "facts" and not fired_body)) and not rule_labels:
-                rule_labels.add(str(head))
+                rule_labels.append(str(head))
 
             rule_cause = FiredRule(fired_id, labels=rule_labels, causes_dict=causes, clingo_atoms=fired_body)
             try:
@@ -116,8 +116,8 @@ def build_causes(m, traces, fired_values, labels_dict, auto_tracing):
             except KeyError:
                 causes[head] = FiredAtom(
                     head,
-                    set([label for lit, label in labels_dict[str(head)] if m.is_true(lit)]) if str(head) in labels_dict else set(),
-                    {rule_cause})
+                    list([label for lit, label in labels_dict[str(head)] if m.is_true(lit)]) if str(head) in labels_dict else list(),
+                    [rule_cause])
 
     return causes
 
