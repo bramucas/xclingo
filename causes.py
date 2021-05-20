@@ -37,11 +37,11 @@ class FiredAtom:
             if labels:
                 if caused_bys:
                     if len(labels)>1:
-                        return Disjunction({CausedBy(lab, c) for lab, c in itertools_product(labels, caused_bys)})
+                        return Disjunction([CausedBy(lab, c) for lab, c in itertools_product(labels, caused_bys)])
                     else:
                         return CausedBy(labels[-1], Disjunction(caused_bys) if len(caused_bys) > 1 else caused_bys[-1])
                 else:
-                    return Disjunction({CausedBy(lab) for lab in labels}) if len(labels) > 1 else CausedBy(labels[-1])
+                    return Disjunction([CausedBy(lab) for lab in labels]) if len(labels) > 1 else CausedBy(labels[-1])
             else:
                 return Disjunction(caused_bys) if caused_bys else Fact()
       
@@ -51,13 +51,13 @@ class FiredAtom:
                 []
             )
         else:
-            causes = set()
+            causes = list()
             for ac in self.alternative_causes:                
-                causes.add(decide_instantiation(
+                causes.append(decide_instantiation(
                     self.atom_labels+ac.labels,
                     [] if not ac.joint_causes else 
                     [ac.joint_causes[-1].explanation] if len(ac.joint_causes) == 1
-                    else [Conjunction({jc.explanation for jc in ac.joint_causes})]
+                    else [Conjunction([jc.explanation for jc in ac.joint_causes])]
                 ))
             return Disjunction(causes)
 
@@ -233,8 +233,8 @@ class Conjunction(Explanation):
 
         @param set[Explanation] elements:
         """
-        if not isinstance(elements, set):
-            raise TypeError("Conjuction constructor must be provided with a set.")
+        if not isinstance(elements, list):
+            raise TypeError("Conjuction constructor must be provided with a list.")
         self.elements = elements
 
     def ascii_tree(self, level=0):
@@ -256,7 +256,7 @@ class Conjunction(Explanation):
         raise NotImplementedError
 
     def expand(self):
-        return [Conjunction(set(tup)) for tup in itertools_product(*[e.expand() for e in self.elements])]
+        return [Conjunction(list(tup)) for tup in itertools_product(*[e.expand() for e in self.elements])]
 
     def is_equal(self, other):
         if not isinstance(other, Conjunction):
@@ -281,8 +281,8 @@ class Disjunction(Explanation):
 
         @param set[Explanation] elements:
         """
-        if not isinstance(elements, set):
-            raise TypeError("Disjunction constructor must be provided with a set.")
+        if not isinstance(elements, list):
+            raise TypeError("Disjunction constructor must be provided with a list.")
         self.elements = elements
 
     def ascii_tree(self, level=0):
