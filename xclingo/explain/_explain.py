@@ -1,17 +1,17 @@
 import types
 from itertools import product as itertools_product
 
-class FiredAtom:
+class XclingoSymbol:
 
-    def __init__(self, atom, atom_labels=list(), alternative_causes=list()):
-        self.atom = atom
+    def __init__(self, symbol, atom_labels=list(), fired_by=list()):
+        self.symbol = symbol
         self.atom_labels = atom_labels
-        self.alternative_causes = alternative_causes
+        self.fired_by = fired_by
 
     def add_alternative_cause(self, cause):
         if type(cause) != FiredRule:
             raise TypeError("Value is not a Cause class instance!")
-        self.alternative_causes.append(cause)
+        self.fired_by.append(cause)
 
     @property
     def expanded_explanations(self):
@@ -47,30 +47,30 @@ class FiredAtom:
       
         if self.is_fact():
             return decide_instantiation(
-                self.atom_labels+[rl for ac in self.alternative_causes for rl in ac.labels if rl],  # atom labels + rule labels
+                self.atom_labels+[rl for ac in self.fired_by for rl in ac.labels if rl],  # atom labels + rule labels
                 []
             )
         else:
             causes = list()
-            for ac in self.alternative_causes:                
+            for ac in self.fired_by:                
                 causes.append(decide_instantiation(
                     self.atom_labels+ac.labels,
-                    [] if not ac.joint_causes else 
-                    [ac.joint_causes[-1].explanation] if len(ac.joint_causes) == 1
-                    else [Conjunction([jc.explanation for jc in ac.joint_causes])]
+                    [] if not ac.body else 
+                    [ac.body[-1].explanation] if len(ac.body) == 1
+                    else [Conjunction([jc.explanation for jc in ac.body])]
                 ))
             return Disjunction(causes)
 
     def is_fact(self):
-        return len([jc for ac in self.alternative_causes for jc in ac.joint_causes]) == 0
+        return len([jc for ac in self.fired_by for jc in ac.body]) == 0
 
     def __str__(self):
-        return str(self.atom)
+        return str(self.symbol)
 
 
 class FiredRule:
 
-    def __init__(self, fired_id, labels=list(), joint_causes=list(), causes_dict=None, clingo_atoms=None):
+    def __init__(self, fired_id, labels=list(), body=list(), causes_dict=None, clingo_atoms=None):
         if (causes_dict is None) != (clingo_atoms is None):
             raise RuntimeError("When lazy initializing FiredRule both 'cause_dict' and "
                                "'clingo_atoms' parameters must be provided")
@@ -80,18 +80,18 @@ class FiredRule:
             setattr(self, "_causes_dict", causes_dict)
             setattr(self, "_clingo_atoms", clingo_atoms)
         else:
-            setattr(self, "_joint_causes", joint_causes)
+            setattr(self, "_body", body)
 
     @property
-    def joint_causes(self):
+    def body(self):
         if hasattr(self, "_causes_dict") and hasattr(self, "_clingo_atoms"):
             try:
-                setattr(self, "_joint_causes", list([self._causes_dict[lit] for lit in self._clingo_atoms]))
+                setattr(self, "_body", list([self._causes_dict[lit] for lit in self._clingo_atoms]))
             except KeyError as ke:
                 raise RuntimeError(f'Failing when accessing provided causes_dict: {ke}')
             delattr(self, "_causes_dict")
             delattr(self, "_clingo_atoms")
-        return self._joint_causes
+        return self._body
 
 
 class Label:
