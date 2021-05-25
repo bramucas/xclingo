@@ -2,7 +2,7 @@ import sys
 import argparse
 import clingo
 
-from causes import FiredAtom, FiredRule, Label, Solution
+from causes import FiredAtom, FiredRule, Label
 from clingo_utilities import find_by_prefix, remove_prefix, find_and_remove_by_prefix, solve_operations
 import old_implementation
 
@@ -101,7 +101,7 @@ def build_causes(m, traces, fired_values, labels_dict, auto_tracing):
                 fired_body.add(clingo.Function(name, values, positive))
 
             rule_labels = list()
-            # labels from 'trace'
+            # labels from 'trace_rule'
             if int(fired_id) in labels_dict and str(head) in labels_dict[int(fired_id)]:
                 lit, label = labels_dict[int(fired_id)][str(head)]
                 if m.is_true(lit):
@@ -203,15 +203,10 @@ def explain_program(original_program, n, debug_level, auto_tracing, format):
     # Solves and prints explanations
     with control.solve(yield_=True) as it:
         sol_n = 0
-        if format == "text":
-            explanations = ""
-        elif format == "dict":
-            explanations = dict()
+
         for m in it:
             sol_n += 1
-
             fired_atoms = build_causes(m, control.traces, build_fired_dict(m), general_labels_dict, auto_tracing)
-
             if debug_level == "causes":
                 print(f'{general_labels_dict}\n{fired_atoms}\n\n')
                 continue
@@ -219,14 +214,27 @@ def explain_program(original_program, n, debug_level, auto_tracing, format):
             atoms_to_explain = find_atoms_to_explain(m, fired_atoms)
 
             s = Solution(sol_n, fired_atoms, atoms_to_explain)
+            s.print_text_explanations()
 
-            if format == "text":
-                explanations += s.text_explanations()
-            elif format == "dict":
-                explanations[sol_n] = s.dict_explanations()
+class Solution:
 
-    return explanations
+    def __init__(self, number, fired_atoms=set(), atoms_to_explain=set()):
+        self.number = number
+        self.fired_atoms = fired_atoms
+        self.atoms_to_explain = atoms_to_explain
 
+    def print_text_explanations(self):
+        print(f'Answer: {self.number}')
+        for fa in [self.fired_atoms[a] for a in self.atoms_to_explain]:
+            print(f'>> {fa.atom}')
+            for e in fa.expanded_explanations:
+                print(e.ascii_tree() + "\n")
+
+    def dict_explanations(self):
+        d = {self.number: {}}
+        for fa in [self.fired_atoms[a] for a in self.atoms_to_explain]:
+            d[fa.atom] = [e.as_label_dict() for e in fa.expanded_explanations]
+        return d
 
 def main():
     # Handles arguments of xclingo
@@ -238,8 +246,9 @@ def main():
     parser.add_argument('--imp', type=str, choices=["old", "new"],
                         default="new",
                         help="Warning: development option.")
-    parser.add_argument('--format', type=str, choices=["text", "dict"], default="text",
-                        help="Specifies the output format.")
+    parser.add_argument('--format', type=str, choices=["text", "dict"],
+                        default="text",
+                        help="Warning: development option.")
     parser.add_argument('-n', default=1, type=int, help="Number of answer sets.")
     parser.add_argument('infile', nargs='+', type=argparse.FileType('r'), default=sys.stdin, help="ASP program")
     args = parser.parse_args()
@@ -249,9 +258,12 @@ def main():
     for file in args.infile:
         original_program += file.read()
 
-    explain_func = explain_program if args.imp == "new" else old_implementation.explain_program_old
+    if args.imp == "new":
+        explain_program(original_program, args.n, args.debug_level, args.auto_tracing, args.format)
+    else:
+        print(old_implementation.explain_program_old(original_program, args.n, args.debug_level, args.auto_tracing, args.format))
 
-    print(explain_func(original_program, args.n, args.debug_level, args.auto_tracing, args.format))
+    
 
 
 if __name__ == "__main__":
