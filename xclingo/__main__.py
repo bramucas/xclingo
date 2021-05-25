@@ -1,9 +1,7 @@
 import argparse
 import sys
-import xclingo.old as old_implementation
 
-from xclingo import explain_program
-
+from xclingo import prepare_xclingo_program
 
 def main():
     # Handles arguments of xclingo
@@ -12,9 +10,6 @@ def main():
                         help="Points out the debugging level. Default: none.")
     parser.add_argument('--auto-tracing', type=str, choices=["none", "facts", "all"], default="none",
                         help="Automatically creates traces for the rules of the program. Default: none.")
-    parser.add_argument('--imp', type=str, choices=["old", "new"],
-                        default="new",
-                        help="Warning: development option.")
     parser.add_argument('--format', type=str, choices=["text", "dict"],
                         default="text",
                         help="Warning: development option.")
@@ -27,13 +22,16 @@ def main():
     for file in args.infile:
         original_program += file.read()
 
-    if args.imp == "new":
-        explain_program(original_program, args.n, args.debug_level, args.auto_tracing, args.format)
-    else:
-        print(old_implementation.explain_program_old(original_program, args.n, args.debug_level, args.auto_tracing, args.format))
-
-    
-
+    # Explains a logic program
+    control = prepare_xclingo_program([f'-n {args.n}', "--project"], original_program, args.debug_level)
+    control.ground([("base", [])])
+    for m in control.solve(yield_=True, auto_tracing=args.auto_tracing):
+        print(f'Answer: {m.number}')
+        for xs in m.xclingo_symbols():
+            print(f'>> {xs.symbol}')
+            for e in xs.expanded_explanations:
+                print(e.ascii_tree())
+                print()
 
 if __name__ == "__main__":
     main()

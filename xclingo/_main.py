@@ -1,9 +1,10 @@
 import clingo
+from clingo import parse_program
 
-from xclingo.explain import FiredAtom, FiredRule, Label
+import xclingo.translation as translation
+
+from xclingo.explain import XclingoSymbol, FiredRule, Label
 from xclingo.utils import find_by_prefix, remove_prefix, find_and_remove_by_prefix, solve_operations
-
-import xclingo.preprocess as preprocess
 
 
 def build_fired_dict(m):
@@ -111,7 +112,7 @@ def build_causes(m, traces, fired_values, labels_dict, auto_tracing):
             try:
                 causes[head].add_alternative_cause(rule_cause)
             except KeyError:
-                causes[head] = FiredAtom(
+                causes[head] = XclingoSymbol(
                     head,
                     list([label for lit, label in labels_dict[str(head)] if m.is_true(lit)]) if str(head) in labels_dict else list(),
                     [rule_cause])
@@ -155,80 +156,165 @@ def find_atoms_to_explain(m, fired_atoms):
 
     return fired_show_all if fired_show_all else fired_atoms.keys()
 
+class XclingoModel:
 
-def build_labels_dict(c_control):
-    """
-    Constructs a dictionary with the processed labels for the program indexed by fired_id or the str version of an atom.
-    Must be called after grounding.
-    @param c_control: clingo.Control object containing the theory atoms after grounding.
-    @return dict:
-    """
-    labels_dict = dict()
-    for atom in c_control.theory_atoms:
-        name = atom.term.name
-        terms = atom.elements[0].terms
+    def __init__(self, model, fired_atoms=set(), atoms_to_explain=set()):
+        if not isinstance(model, clingo.Model):
+            raise TypeError
+        # internal model attributes    
+        self._model = model
+        self.context = self._model.context
+        self.cost = self._model.cost
+        self.number = self._model.number
+        self.optimality_proven = self._model.optimality_proven
+        self.thread_id = self._model.thread_id
+        self.type = self._model.type
 
-        if name == "trace_all":
-
-            label = Label(str(terms[1]), solve_operations(terms[2:]))
-            index = _fhead_from_theory_term(terms[0])
-            if index in labels_dict:
-                labels_dict[index].append((atom.literal, label))
-            else:
-                labels_dict[index] = [(atom.literal, label)]
-
-        elif name == "trace":
-            label = Label(str(terms[2]), solve_operations(terms[3:]))
-            index = int(str(terms[0]))
-            fired_head = _fhead_from_theory_term(terms[1])
-
-            if index not in labels_dict:
-                labels_dict[index] = {}
-
-            labels_dict[index][fired_head] = (atom.literal, label)
-
-    return labels_dict
-
-
-def explain_program(original_program, n, debug_level, auto_tracing, format):
-    control = preprocess.prepare_xclingo_program([f'-n {n}', "--project"], original_program, debug_level)
-    control.ground([("base", [])])
-
-    # Constructs labels
-    general_labels_dict = build_labels_dict(control)
-
-    # Solves and prints explanations
-    with control.solve(yield_=True) as it:
-        sol_n = 0
-
-        for m in it:
-            sol_n += 1
-            fired_atoms = build_causes(m, control.traces, build_fired_dict(m), general_labels_dict, auto_tracing)
-            if debug_level == "causes":
-                print(f'{general_labels_dict}\n{fired_atoms}\n\n')
-                continue
-
-            atoms_to_explain = find_atoms_to_explain(m, fired_atoms)
-
-            s = Solution(sol_n, fired_atoms, atoms_to_explain)
-            s.print_text_explanations()
-
-class Solution:
-
-    def __init__(self, number, fired_atoms=set(), atoms_to_explain=set()):
-        self.number = number
-        self.fired_atoms = fired_atoms
+        # XclingoModel attributes
+        self._xclingo_symbols = fired_atoms
         self.atoms_to_explain = atoms_to_explain
 
-    def print_text_explanations(self):
-        print(f'Answer: {self.number}')
-        for fa in [self.fired_atoms[a] for a in self.atoms_to_explain]:
-            print(f'>> {fa.atom}')
-            for e in fa.expanded_explanations:
-                print(e.ascii_tree() + "\n")
+    def xclingo_symbols(self, yield_=True, only_show_all=True):
+        if only_show_all:
+            if yield_:
+                for a, fa in self._xclingo_symbols.items():
+                    if a in self.atoms_to_explain:
+                        yield fa
+            else:
+                return [self._xclingo_symbols[a] for a in self._xclingo_symbols if a in self.atoms_to_explain] 
+        else:
+            if yield_:
+                for a, fa in self._xclingo_symbols.items():
+                    yield fa
+            else:
+                return self._xclingo_symbols.values()
 
-    def dict_explanations(self):
-        d = {self.number: {}}
-        for fa in [self.fired_atoms[a] for a in self.atoms_to_explain]:
-            d[fa.atom] = [e.as_label_dict() for e in fa.expanded_explanations]
-        return d
+    # Model calls
+    def contains(self, atom):
+        return self._model.contains(atom)
+
+    def extend(self, symbols):
+        return self._model.extend(symbols)
+
+    def is_true(self, literal):
+        return self._model.is_true(literal)
+
+    def symbols(self, atoms=False, terms=False, shown=False, csp=False, complement=False):
+        return self._model.symbols(atoms, terms, shown, csp, complement)
+
+class XclingoControl(clingo.Control):
+    """
+    Extends Control class with xclingo functions and parameters.
+    """
+    _rule_counter = None
+    traces = None
+    labels_dict = None
+    have_explain = None
+
+    def __init__(self, *args):
+        self.rule_counter = 0
+        self.traces = {}
+        labels_dict = {}
+        self.have_explain = False
+        super().__init__(*args)
+
+    def count_rule(self):
+        current = self.rule_counter
+        self.rule_counter += 1
+        return current
+
+    def __build_labels_dict(self):
+        """
+        Constructs a dictionary with the processed labels for the program indexed by fired_id or the str version of an atom.
+        Must be called after grounding.
+        @param c_control: clingo.Control object containing the theory atoms after grounding.
+        @return dict:
+        """
+        labels_dict = dict()
+        for atom in self.theory_atoms:
+            name = atom.term.name
+            terms = atom.elements[0].terms
+
+            if name == "trace_all":
+                label = Label(str(terms[1]), solve_operations(terms[2:]))
+                index = _fhead_from_theory_term(terms[0])
+                if index in labels_dict:
+                    labels_dict[index].append((atom.literal, label))
+                else:
+                    labels_dict[index] = [(atom.literal, label)]
+
+            elif name == "trace":
+                label = Label(str(terms[2]), solve_operations(terms[3:]))
+                index = int(str(terms[0]))
+                fired_head = _fhead_from_theory_term(terms[1])
+
+                if index not in labels_dict:
+                    labels_dict[index] = {}
+
+                labels_dict[index][fired_head] = (atom.literal, label)
+
+        return labels_dict
+
+    def ground(self, *args):
+        super().ground(*args)
+        self.labels_dict = self.__build_labels_dict()
+
+    def solve(self, yield_=True, auto_tracing="none"):
+        with super().solve(yield_=yield_) as it:
+            sol_n = 0
+            for m in it:
+                sol_n += 1
+                fired_atoms = build_causes(m, self.traces, build_fired_dict(m), self.labels_dict, auto_tracing)
+                atoms_to_explain = find_atoms_to_explain(m, fired_atoms)
+                yield XclingoModel(m, fired_atoms, atoms_to_explain)
+
+
+def prepare_xclingo_program(clingo_arguments, original_program, debug_level):
+    control = XclingoControl(clingo_arguments)
+
+    # Pre-processing original program
+    translated_program = translation.translate_trace(original_program)
+    translated_program = translation.translate_trace_all(translated_program)
+
+    aux = translated_program
+    translated_program = translation.translate_show_all(translated_program)
+
+    control.have_explain = bool(aux != translated_program)
+
+    # Prints translated_program and exits
+    if debug_level == "magic-comments":
+        print(translated_program)
+        exit(0)
+
+    # Sets theory atom &label and parses/handles input program
+    with control.builder() as builder:
+        # Adds theories
+        parse_program("""#program base. 
+                        #theory trace {
+                            t { 
+                                - : 7, unary;
+                                + : 6, binary, left; 
+                                - : 6, binary, left 
+                            }; 
+                            &trace/0: t, any}.""",
+                      lambda ast_object: builder.add(ast_object))
+        parse_program("""#program base. 
+                        #theory trace_all {
+                            t { 
+                                - : 7, unary; 
+                                + : 6, binary, left; 
+                                - : 6, binary, left 
+                            }; 
+                            &trace_all/0: t, any}.""",
+                      lambda ast_object: builder.add(ast_object))
+        # Handle xclingo sentences
+        parse_program(
+            "#program base." + translated_program,
+            lambda ast_object: translation.translate_to_fired_holds(ast_object, control, builder, debug_level == "translation")
+        )
+
+    # Translation was printed during _translate_to_fired_holds so we can now exit
+    if debug_level == "translation":
+        exit(0)
+
+    return control

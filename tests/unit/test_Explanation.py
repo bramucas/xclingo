@@ -1,6 +1,5 @@
 import pytest
-from causes import Label
-from causes import Explanation, ExplanationRoot, ExplanationNode
+from xclingo.explain import Explanation, ExplanationRoot, ExplanationNode, Label
 
 
 class TestExplanation:
