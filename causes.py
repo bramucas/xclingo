@@ -1,5 +1,5 @@
+import types
 from itertools import product as itertools_product
-
 
 class FiredAtom:
 
@@ -47,7 +47,7 @@ class FiredAtom:
       
         if self.is_fact():
             return decide_instantiation(
-                self.atom_labels+[rl for ac in self.alternative_causes for rl in ac.labels if rl],
+                self.atom_labels+[rl for ac in self.alternative_causes for rl in ac.labels if rl],  # atom labels + rule labels
                 []
             )
         else:
@@ -60,16 +60,6 @@ class FiredAtom:
                     else [Conjunction([jc.explanation for jc in ac.joint_causes])]
                 ))
             return Disjunction(causes)
-
-    def text_explanation(self, include_header=False):
-        return "{header}\n{explanations}".format(
-            header=f'>> {self.atom}\t[{len(self.expanded_explanations)}]' if include_header else "",
-            explanations="\n\n".join([e.ascii_tree(level=0) for e in self.expanded_explanations])
-            if self.expanded_explanations else "\t1"
-        )
-
-    def dict_explanation(self):
-        return [e.as_label_dict() for e in self.expanded_explanations]
 
     def is_fact(self):
         return len([jc for ac in self.alternative_causes for jc in ac.joint_causes]) == 0
@@ -120,72 +110,63 @@ class Label:
     def __str__(self):
         return self.replace_values()
 
+class DisjunctiveExplanation:
 
-class Solution:
-
-    def __init__(self, number, fired_atoms=set(), atoms_to_explain=set()):
-        self.number = number
-        self.fired_atoms = fired_atoms
-        self.atoms_to_explain = atoms_to_explain
-
-    def text_explanations(self):
-        return "Answer: {sol_number}\n{explanations}".format(
-                    sol_number=self.number,
-                    explanations="\n\n".join(self.fired_atoms[a].text_explanation(include_header=True)
-                                             for a in self.atoms_to_explain)
-                )
-
-    def dict_explanations(self):
-        return {str(a): self.fired_atoms[a].dict_explanation() for a in self.atoms_to_explain}
-
-
-class Explanation:
-
-    @classmethod
-    def from_dict(cls, d):
-        if d == 1:
-            return Fact()
-        elif len(d) > 1:
-            return Conjunction(
-                {CausedBy(Label(key), Explanation.from_dict(val) if val else Fact()) for key, val in d.items()}
-            )
-        else:
-            for key, val in d.items():
-                return CausedBy(
-                    Label(key),
-                    Explanation.from_dict(val)
-                )
-
-    @staticmethod
-    def ascii_root():
-        return "  *\n"
-
-    @staticmethod
-    def ascii_branch(level):
-        return "  |" * (level + 1) + "__"
+    def __explanation_from_stack(self, cb_stack):
+        if not cb_stack:
+            raise RuntimeError("Empty cb_stack")
+        l = [ExplanationRoot(list())]   
+        
+        for label, level in cb_stack:
+            new = ExplanationNode(label, list())
+            l[level].causes.append(new)  # appends to parent
+            if level+1 == len(l):
+                l.append(new)
+            else:                  
+                l[level+1] = new  # replaces older brother            
+        
+        return l[0]
 
     def expand(self):
         """
         Breaks all the disjunctions inside the explanation. As a result, the method returns a list of Explanations
         @return list[Explanation]:
         """
-        raise NotImplementedError
+        level = -1
+        cb_stack = []
+        stack = [(isinstance(self, CausedBy), 0, self)]
 
-    def ascii_tree(self):
-        """
-        Returns the explanation as an ascii tree. It fails with "NotImplementedError" if the explanation constains a
-        disjunction.
-        @return str:
-        """
-        raise NotImplementedError
+        while (stack):
+            try:
+                _, p, e = stack[-1]
+                if isinstance(e, types.GeneratorType): # already visited, disjunction
+                    current = next(e)
+                    yield self.__explanation_from_stack(cb_stack)
+                    cb_stack = cb_stack[:p]
+                else:
+                    iter = e._iterate_causes()
+                    # updates stacks 
+                    if isinstance(e, CausedBy):
+                        level += 1
+                        cb_stack.append((e.caused, level))
+                    stack[-1] = (isinstance(e, CausedBy), len(cb_stack), iter)
+                    
+                    # next
+                    current = next(iter)
+                    
+                for c in current:  # len(current)>1 is conjunction
+                    stack.append((isinstance(c, CausedBy), len(cb_stack), c))
 
-    def as_label_dict(self):
-        """
-        Returns the explanation as dictionary using the labels as keys. It fails with "NotImplementedError" if the
-        explanation contains a disjunction.
-        @return dict:
-        """
-        raise NotImplementedError
+            except StopIteration:
+                is_cb, _, _ = stack.pop()
+                if is_cb:
+                    level+= -1
+                if not stack:
+                    if cb_stack:
+                        yield self.__explanation_from_stack(cb_stack)
+                    else:
+                        yield ExplanationRoot([ExplanationNode("1")])
+                
 
     def as_formula(self):
         """
@@ -203,19 +184,13 @@ class Explanation:
         raise NotImplementedError
 
 
-class Fact(Explanation):
+class Fact(DisjunctiveExplanation):
 
     def __init__(self):
         pass
 
-    def expand(self):
-        return [self]
-
-    def ascii_tree(self, level=0):
-        return "  1" if level == 0 else ""
-
-    def as_label_dict(self):
-        return {}
+    def _iterate_causes(self):
+        yield []
 
     def as_formula(self):
         raise NotImplementedError
@@ -225,8 +200,7 @@ class Fact(Explanation):
             return False
         return True
 
-
-class Conjunction(Explanation):
+class Conjunction(DisjunctiveExplanation):
 
     def __init__(self, elements):
         """
@@ -237,26 +211,11 @@ class Conjunction(Explanation):
             raise TypeError("Conjuction constructor must be provided with a list.")
         self.elements = elements
 
-    def ascii_tree(self, level=0):
-        return "{root}{tree}".format(
-            root=Explanation.ascii_root() if level == 0 else "",
-            tree="".join([e.ascii_tree(level=level) for e in self.elements])
-        )
-
-    def as_label_dict(self):
-        """
-        @return dict:
-        """
-        d = {}
-        for e in self.elements:
-            d.update(e.as_label_dict())
-        return d
-
     def as_formula(self):
         raise NotImplementedError
 
-    def expand(self):
-        return [Conjunction(list(tup)) for tup in itertools_product(*[e.expand() for e in self.elements])]
+    def _iterate_causes(self):
+        yield self.elements
 
     def is_equal(self, other):
         if not isinstance(other, Conjunction):
@@ -274,7 +233,7 @@ class Conjunction(Explanation):
         return True
 
 
-class Disjunction(Explanation):
+class Disjunction(DisjunctiveExplanation):
 
     def __init__(self, elements=None):
         """
@@ -285,17 +244,12 @@ class Disjunction(Explanation):
             raise TypeError("Disjunction constructor must be provided with a list.")
         self.elements = elements
 
-    def ascii_tree(self, level=0):
-        raise RuntimeError("An explanation with a disjunction cannot be printed as an ascii tree.")
-
-    def as_label_dict(self):
-        raise RuntimeError("An explanation with a disjunction cannot be exported to dict.")
-
     def as_formula(self):
         raise NotImplementedError
 
-    def expand(self):
-        return [expanded for dis_e in self.elements for expanded in dis_e.expand()]
+    def _iterate_causes(self):
+        for e in self.elements:
+            yield [e]
 
     def is_equal(self, other):
         if not isinstance(other, Disjunction):
@@ -313,7 +267,7 @@ class Disjunction(Explanation):
         return True
 
 
-class CausedBy(Explanation):
+class CausedBy(DisjunctiveExplanation):
 
     def __init__(self, caused, cause=Fact()):
         """
@@ -324,26 +278,16 @@ class CausedBy(Explanation):
         self.caused = caused
         self.cause = cause
 
-    def ascii_tree(self, level=0):
-        return "{root}{branch}{node}{child}".format(
-            root=Explanation.ascii_root() if level == 0 else "\n",
-            branch=Explanation.ascii_branch(level),
-            node=self.caused.replace_values(),
-            child=self.cause.ascii_tree(level=level+1)
-        )
-
-    def as_label_dict(self):
-        return {self.caused.replace_values(): self.cause.as_label_dict()}
-
     def as_formula(self):
         raise NotImplementedError
 
-    def expand(self):
-        if isinstance(self.cause, Fact):
-            return [self]
+    def _iterate_causes(self):
+        if isinstance(self.cause, CausedBy):
+            yield [self.cause]
         else:
-            return [CausedBy(caused, cause) for (caused, cause) in itertools_product({self.caused}, self.cause.expand())]
-
+            for c in self.cause._iterate_causes():
+                yield c
+                
     def is_equal(self, other):
         if not isinstance(other, CausedBy):
             return False
@@ -352,3 +296,94 @@ class CausedBy(Explanation):
             return False
 
         return True
+
+class Explanation:
+
+    @staticmethod
+    def ascii_branch(level):
+        if level > 0:
+            return "  |" * (level) + "__"
+        else:
+            return ""
+    
+    def __preorder_iterator(self):
+        stack = [iter([self])]
+        level = 0
+        while (stack):
+            try:
+                current = next(stack[-1])
+                yield (current, level)
+                stack.append(iter(current.causes))
+                level += 1
+            except StopIteration:
+                stack.pop()
+                level += -1
+
+    def ascii_tree(self):
+        expl = ""
+        for node, level in self.__preorder_iterator():
+            expl += "{branch}{text}\n".format(
+                branch=Explanation.ascii_branch(level),
+                text=node.get_node_text(),
+            )
+        return expl
+
+    def is_equal(self, other):
+        if not isinstance(other, Explanation):
+            return False
+
+        for (node1, level1), (node2, level2) in zip(self.__preorder_iterator(), other.__preorder_iterator()):
+            if not node1._node_equals(node2):
+                return False
+
+            if (level1 != level2):
+                return False
+        
+        return True
+
+class ExplanationRoot(Explanation):
+
+    def __init__(self, causes=list()):
+        if not isinstance(causes, list):
+            raise RuntimeError("Parameter causes should be a list.")
+        else:
+            self.causes = causes
+
+    def get_node_text(self):
+        return "  *"
+
+    def _node_equals(self, other):
+        if not isinstance(other, ExplanationRoot):
+            return False
+
+        return True
+
+class ExplanationNode(Explanation):
+    """
+    A non-binary tree.
+    """
+
+    def __init__(self, label, causes=list()):
+        if isinstance(label, str):
+            self.label = Label(label)
+        elif not isinstance(label, Label):
+            raise RuntimeError("Parameter label has to be a Label object.")
+        else:
+            self.label  = label
+
+        if not isinstance(causes, list):
+            raise RuntimeError("Parameter causes should be a list.")
+        else:
+            self.causes = causes
+
+    def get_node_text(self):
+        return self.label.replace_values()
+
+    def _node_equals(self, other):
+        if not isinstance(other, ExplanationNode):
+            return False
+
+        if self.label.replace_values() != other.label.replace_values():
+            return False
+
+        return True   
