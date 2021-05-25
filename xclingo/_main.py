@@ -1,5 +1,5 @@
 import clingo
-from clingo import Control, parse_program
+from clingo import parse_program
 
 import xclingo.translation as translation
 

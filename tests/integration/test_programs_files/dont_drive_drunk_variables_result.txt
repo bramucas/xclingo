@@ -1,1 +1,33 @@
-{1: {'sentence(gabriel,prison)': [{'"gabriel has been sentenced to prison"': {'"gabriel has driven drunk"': {'"gabriel has driven"': {}, '"gabriel was drunk"': {}}}}, {'"gabriel has been sentenced to prison"': {'"gabriel has resisted to authority"': {}}}], 'sentence(clare,innocent)': [{'"clare is innocent."': {}}]}}
+Answer: 1
+>> sentence(gabriel,prison)
+  *
+  |__"gabriel has been sentenced to prison"
+  |  |__"gabriel has driven drunk"
+  |  |  |__"gabriel BCA over 30"
+
+
+  *
+  |__"gabriel has been sentenced to prison"
+  |  |__"gabriel has driven drunk"
+  |  |  |__"gabriel was drunk"
+  |  |  |__"gabriel was driving"
+
+
+  *
+  |__"gabriel has been sentenced to prison"
+  |  |__"gabriel has driven drunk"
+  |  |  |__"gabriel was drunk"
+  |  |  |__"gabriel has driven a car"
+
+
+  *
+  |__"gabriel has been sentenced to prison"
+  |  |__"gabriel has resisted to authority"
+  |  |  |__"gabriel has resisted authority"
+
+
+>> sentence(clare,innocent)
+  *
+  |__"clare is innocent."
+
+

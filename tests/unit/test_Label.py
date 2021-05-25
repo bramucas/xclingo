@@ -1,5 +1,4 @@
-from causes import Label
-
+from xclingo.explain import Label
 
 class TestLabel:
 
