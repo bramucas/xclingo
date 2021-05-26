@@ -306,7 +306,7 @@ class Explanation:
         else:
             return ""
     
-    def __preorder_iterator(self):
+    def preorder_iterator(self):
         stack = [iter([self])]
         level = 0
         while (stack):
@@ -321,7 +321,7 @@ class Explanation:
 
     def ascii_tree(self):
         expl = ""
-        for node, level in self.__preorder_iterator():
+        for node, level in self.preorder_iterator():
             expl += "{branch}{text}\n".format(
                 branch=Explanation.ascii_branch(level),
                 text=node.get_node_text(),
@@ -332,7 +332,7 @@ class Explanation:
         if not isinstance(other, Explanation):
             return False
 
-        for (node1, level1), (node2, level2) in zip(self.__preorder_iterator(), other.__preorder_iterator()):
+        for (node1, level1), (node2, level2) in zip(self.preorder_iterator(), other.preorder_iterator()):
             if not node1._node_equals(node2):
                 return False
 
