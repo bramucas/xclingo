@@ -4,28 +4,37 @@ Explains the conclusions of logic programs.
 
 ### Python requirements
 
-* Python 3.* or more.
+* Python 3.7 or more.
 * Python libraries:
-  * [clingo module for python](https://potassco.org/clingo/).
-  * pandas
+  * [clingo package for python](https://potassco.org/clingo/). **Version 5.4**
+    * *It does not work with clingo 5.5*
   * more_itertools
 
 
-### Warning
+### Not supported yet
 
 The complete clingo syntax is not supported yet. For example:
 
 * Pools (i. e. ```p(a;b;c)```) are not supported yet.
 * Aggregates and choice rules (i. e. ```1 {student(X): person(X) } 2```) are not supported yet. 
 
+
+### Install
+
+Clone the repo and run the setup.py script using pip:
+```sh
+git clone git@github.com:bramucas/xclingo.git
+cd xclingo
+python -m pip install .
+```
+
 ### Usage
 
 
 ```
-usage: xclingo.py [-h]
-                  [--debug-level {none,magic-comments,translation,causes}]
-                  [--auto-tracing {none,facts,all}]
-                  infile [infile ...]
+usage: xclingo [-h] [--debug-level {none,magic-comments,translation,causes}]
+               [--auto-tracing {none,facts,all}] [--format {text,dict}] [-n N]
+               infile [infile ...]
 
 Tool for debugging and explaining ASP programs
 
@@ -39,6 +48,8 @@ optional arguments:
   --auto-tracing {none,facts,all}
                         Automatically creates traces for the rules of the
                         program. Default: none.
+  --format {text,dict}  Warning: development option.
+  -n N                  Number of answer sets.
 ```
 
 ### Examples of use
