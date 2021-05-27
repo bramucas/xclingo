@@ -105,7 +105,7 @@ def build_causes(m, traces, fired_values, labels_dict, auto_tracing):
                 if m.is_true(lit):
                     rule_labels.append(label)
             # Auto-labelling labels
-            if (auto_tracing == "all" or (auto_tracing == "facts" and not fired_body)) and not rule_labels:
+            if (len(rule_labels)==0 and (str(head) not in labels_dict)) and (auto_tracing == "all" or (auto_tracing == "facts" and not fired_body)):
                 rule_labels.append(str(head))
 
             rule_cause = FiredRule(fired_id, labels=rule_labels, causes_dict=causes, clingo_atoms=fired_body)
