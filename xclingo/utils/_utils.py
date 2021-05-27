@@ -88,3 +88,32 @@ def solve_operations(values):
         else:
             solved.append(str(value))
     return solved
+
+
+def fhead_from_theory_term(theory_term):
+
+    is_classic_negation = theory_term.name == "-" and len(theory_term.arguments) == 1
+
+    if is_classic_negation:
+        theory_term = theory_term.arguments[0]
+
+    # Process arguments
+    arguments = []
+    for arg in theory_term.arguments:
+        if arg.type == clingo.TheoryTermType.Function:
+            if arg.name == "+" and len(arg.arguments) == 2:
+                arguments.append(str(arg.arguments[0].number + arg.arguments[1].number))
+            elif arg.name == "-" and len(arg.arguments) == 2:
+                arguments.append(str(arg.arguments[0].number - arg.arguments[1].number))
+            else:
+                arguments.append(str(arg))
+        else:
+            arguments.append(str(arg))
+
+    fired_head = "{sign}{name}{arguments}".format(
+        sign="-" if is_classic_negation else "",
+        name=theory_term.name,
+        arguments="({})".format(",".join(arguments)) if arguments else ""
+    )
+
+    return fired_head
