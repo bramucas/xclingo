@@ -24,6 +24,10 @@ setuptools.setup(
         'answer set programming',
     ],
     python_requires='>=3.7.0',
+    install_requires=[
+        'clingo>=5.5.0.post3',
+        'itertools',
+    ],
     packages=[
         'xclingo',
         'xclingo.explain',
