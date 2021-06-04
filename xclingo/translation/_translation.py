@@ -1,4 +1,5 @@
-from clingo import ast, parse_program
+from clingo import ast
+from clingo.ast import parse_string
 import re
 from xclingo.utils import find_variables
 
@@ -14,10 +15,9 @@ class XClingoAST():
 
         @param ast.AST base_ast:
         """
-        self._internal_ast = base_ast
-
-        self.type = base_ast.type
+        self.type = base_ast.ast_type
         self.child_keys = base_ast.child_keys
+        self._internal_ast = base_ast  # must be at the end      
 
     """ast.AST methods"""
     def items(self):
@@ -34,10 +34,10 @@ class XClingoAST():
         return self._internal_ast.__contains__(item)
 
     def __getitem__(self, item):
-        item = self._internal_ast.__getitem__(item)
+        item = self._internal_ast.__getattr__(item)
         if type(item) == ast.AST:
             return XClingoAST(item)
-        if type(item) == list:
+        if type(item) == ast.ASTSequence:
             new_list = []
             for i in item:
                 if type(i) == ast.AST:
@@ -63,8 +63,8 @@ class XClingoAST():
     def __ge__(self, other):
         return self._internal_ast.__ge__(other)
 
-    # def __getattribute__(self, item):
-    #     return self._internal_ast.__getattribute__(item)
+    # def __getattr__(self, item):
+    #     return self._internal_ast.__getattr__(item)
 
     def __gt__(self, other):
         return self._internal_ast.__gt__(other)
@@ -88,7 +88,7 @@ class XClingoAST():
     #     self._internal_ast.__setattr__(key, value)
 
     def __setitem__(self, key, value):
-        self._internal_ast.__setitem__(key, value)
+        self._internal_ast.__setattr__(key, value)
 
     def __str__(self):
         return self._internal_ast.__str__()
@@ -136,7 +136,7 @@ class XClingoAST():
                 self['head'].add_prefix(prefix)
         else:
             fun = self.get_function()
-            if fun:
+            if fun is not None:
                 fun['name'] = prefix + fun['name']
 
     def get_function(self):
@@ -149,7 +149,7 @@ class XClingoAST():
             return self
 
         if self.type == ast.ASTType.SymbolicAtom:
-            return self['term'].get_function()
+            return self['symbol'].get_function()
 
         if self.type == ast.ASTType.UnaryOperation:
             return self['argument'].get_function()
@@ -177,7 +177,7 @@ def add_to_base(rules_to_add, builder, t_option):
 
     # Adds the generated rules to the base program
     try:
-        parse_program("#program base." + rules_to_add, lambda new_ast: builder.add(new_ast))
+        parse_string("#program base." + rules_to_add, builder.add)
     except RuntimeError as error:
         if str(error) == "syntax error":
             print("Translation error:\n\n{0}".format(rules_to_add))
@@ -255,7 +255,7 @@ def separate_labels_from_body(body_asts):
         if b_ast['atom'].type == ast.ASTType.TheoryAtom:
             label_body.append(b_ast)
         else:
-            rest.append(XClingoAST(b_ast))
+            rest.append(b_ast)
 
     return label_body, rest
 
@@ -299,11 +299,11 @@ def translate_to_fired_holds(rule_ast, control, builder, t_option):
                                    list(set(map(str, find_variables([ast['atom'] for ast in rule_ast['body']]))) - set(map(str, head_function['arguments'])))
 
             control.traces[rule_counter] = {
-                'head': (rule_ast['head']['atom']['term'].type != ast.ASTType.UnaryOperation,
+                'head': (rule_ast['head']['atom']['symbol'].type != ast.ASTType.UnaryOperation,
                          str(head_function['name']), head_function['arguments']),
                 'arguments': fired_head_variables,
                 # 'body' contains pairs of function names and arguments found in the body
-                'body': [(lit['atom']['term'].type != ast.ASTType.UnaryOperation,
+                'body': [(lit['atom']['symbol'].type != ast.ASTType.UnaryOperation,
                           lit.get_function()['name'], lit.get_function()['arguments'])
                          for lit in rest_body if
                          lit.type == ast.ASTType.Literal and lit['atom'].type == ast.ASTType.SymbolicAtom and lit[
@@ -336,7 +336,7 @@ def translate_to_fired_holds(rule_ast, control, builder, t_option):
 
             # Generates holds rule
             rule_ast['head'].add_prefix('holds_')
-            head_function['arguments'] = [ast.Variable(v['location'], "Aux" + str(head_function['arguments'].index(v._internal_ast))) for v in head_function['arguments']]
+            head_function['arguments'] = [ast.Variable(v['location'], "Aux" + str(i)) for i,v in enumerate(head_function['arguments'])]
             holds_rule = "{head} :- fired_{rule_counter}({fired_arguments}).".format(
                 head=rule_ast['head'],
                 rule_counter=rule_counter,

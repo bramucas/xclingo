@@ -1,5 +1,5 @@
 import clingo
-from clingo import parse_program
+from clingo.ast import parse_string, ProgramBuilder
 
 import xclingo.translation as translation
 
@@ -287,9 +287,9 @@ def prepare_xclingo_program(clingo_arguments, original_program, debug_level):
         exit(0)
 
     # Sets theory atom &label and parses/handles input program
-    with control.builder() as builder:
+    with ProgramBuilder(control) as builder:
         # Adds theories
-        parse_program("""#program base. 
+        parse_string("""#program base. 
                         #theory trace {
                             t { 
                                 - : 7, unary;
@@ -297,8 +297,8 @@ def prepare_xclingo_program(clingo_arguments, original_program, debug_level):
                                 - : 6, binary, left 
                             }; 
                             &trace/0: t, any}.""",
-                      lambda ast_object: builder.add(ast_object))
-        parse_program("""#program base. 
+                      builder.add)
+        parse_string("""#program base. 
                         #theory trace_all {
                             t { 
                                 - : 7, unary; 
@@ -306,9 +306,9 @@ def prepare_xclingo_program(clingo_arguments, original_program, debug_level):
                                 - : 6, binary, left 
                             }; 
                             &trace_all/0: t, any}.""",
-                      lambda ast_object: builder.add(ast_object))
+                      builder.add)
         # Handle xclingo sentences
-        parse_program(
+        parse_string(
             "#program base." + translated_program,
             lambda ast_object: translation.translate_to_fired_holds(ast_object, control, builder, debug_level == "translation")
         )
