@@ -36,11 +36,11 @@ def find_variables(ast_list):
     for ast in ast_list:
         if ast.type == clingo.ast.ASTType.SymbolicAtom:
 
-            if (ast['term'].type == clingo.ast.ASTType.UnaryOperation
-                    and ast['term']['operator'] == clingo.ast.UnaryOperator.Minus):
-                arguments = ast['term']['argument']['arguments']
+            if (ast['symbol'].type == clingo.ast.ASTType.UnaryOperation
+                    and ast['symbol']['operator'] == clingo.ast.UnaryOperator.Minus):
+                arguments = ast['symbol']['argument']['arguments']
             else:
-                arguments = ast['term']['arguments']
+                arguments = ast['symbol']['arguments']
 
             for a in arguments:
                 if a.type == clingo.ast.ASTType.Variable:
