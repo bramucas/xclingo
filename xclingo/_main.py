@@ -31,9 +31,9 @@ def replace_by_value(var_val, variables):
 
         if v.type == clingo.ast.ASTType.Variable:
             values.append(var_val[str(v)])
-        elif v.type == clingo.ast.ASTType.Symbol:
+        elif v.type == clingo.ast.ASTType.SymbolicTerm:
             if v['symbol'].type == clingo.SymbolType.Number:
-                values.append(int(str(v)))
+                values.append(v['symbol'])
             else:
                 values.append(clingo.Function(v['symbol'].name, v['symbol'].arguments, v['symbol'].positive))
         elif v.type == clingo.ast.ASTType.Function:
