@@ -1,6 +1,15 @@
-# xclingo
-Explains the conclusions of logic programs.
 
+
+## :exclamation::exclamation: ATTENTION :exclamation::exclamation:
+Caution: this repository is deprecated in favour of the new version: [xclingo 2](https://github.com/bramucas/xclingo2). This repository contains the software used in the following articles:
+* [[2020] A system for explainable answer set programming](https://arxiv.org/abs/2009.10242)
+* [[2021]Explainable Machine Learning for liver transplantation](https://arxiv.org/abs/2109.13893)
+
+Any subsequent articles refer to the new software.
+
+# xclingo
+
+Explains the conclusions of logic programs.
 
 ### Python requirements
 
